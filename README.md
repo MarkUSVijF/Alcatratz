@@ -8,4 +8,4 @@ Creating a Server solution for Lobby Hostings:
 	Clients: are only able to use RMI
 	Servers: have to use Spread for communications between each other
 
-	trunk: is the original svn-lokal copy, since the repository cannot be reached anymore
+trunk: is the original svn-lokal copy, since the repository cannot be reached anymore
