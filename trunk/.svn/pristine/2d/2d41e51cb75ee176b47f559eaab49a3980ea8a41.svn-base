@@ -1,0 +1,312 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.server.rmi;
+
+import java.io.Serializable;
+import net.technikumwien.bic4b18_01.server.applicationMW.Spread;
+import java.util.ArrayDeque;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import net.technikumwien.bic4b18_01.common.rmi.MoveInfo;
+import net.technikumwien.bic4b18_01.server.applicationMW.Middleware;
+import net.technikumwien.bic4b18_01.server.common.Game;
+import net.technikumwien.bic4b18_01.server.applicationMW.ToClient;
+import net.technikumwien.bic4b18_01.server.spread.AsynchronSpreadMessage;
+import spread.SpreadException;
+import spread.SpreadMessage;
+
+/**
+ *
+ * @author Florian
+ */
+public class CallBackManager {
+
+    private static final Logger logger = Logger.getLogger(CallBackManager.class.getName());
+    private static final Thread manager;
+
+    //which names this server reacts towards
+    private static final Map<String, Set<String>> serverHandles; //server -> reacts to servernames
+    private static final String[] myHandle; //which servernames I react to
+    //workload
+    private static final Map<String, Set<Integer>> jobs; //servername -> Set of gameID
+    private static final Map<Integer, Action> actions; //gameID -> action
+    
+    public static SpreadMessage generateUpdate(SpreadMessage sm) {
+        Middleware.serverStateLock.writeLock().lock();
+        try {
+            sm.digest(new HashMap(serverHandles));
+            sm.digest(new HashMap(jobs));
+            sm.digest(new HashMap(actions));
+        } catch (SpreadException ex) {
+            logger.log(Level.SEVERE, null, ex);
+        } finally {
+            Middleware.serverStateLock.writeLock().unlock();
+        }
+        return sm;
+    }
+
+    public static void update(Map<String, Set<String>> serverHandlesUpdate, Map<String, Set<Integer>> jobsUpdate, Map<Integer, Action> actionsUpdate) {
+        logger.log(Level.INFO, "{0} -> update", new Object[]{Thread.currentThread().getName()});
+        Middleware.serverStateLock.writeLock().lock();
+        try {
+            serverHandles.clear();
+            serverHandles.putAll(serverHandlesUpdate);
+            jobs.clear();
+            jobs.putAll(jobsUpdate);
+            actions.clear();
+            actions.putAll(actionsUpdate);
+        } finally {
+            Middleware.serverStateLock.writeLock().unlock();
+        }
+    }
+
+    static {
+        serverHandles = new HashMap();
+        myHandle = new String[]{""};
+        jobs = new HashMap();
+        actions = new HashMap();
+        logger.log(Level.INFO, "{0} -> daemon ? {2}.", new Object[]{Thread.currentThread().getName(), Thread.currentThread().isDaemon()});
+        manager = new Thread(() -> {
+            while (true) {
+                for (Action action : getWork()) {
+                    if (action.run().isEmpty()) {
+                        action.removeFromJobs();
+                    }
+                }
+                try {
+                    Thread.sleep(10000);
+                } catch (InterruptedException ex) {
+                }
+            }
+        });
+        logger.log(Level.INFO, "{0} -> daemon ? {2}.", new Object[]{Thread.currentThread().getName(), Thread.currentThread().isDaemon()});
+        manager.setDaemon(true);
+        manager.setName("Call Back Manager");
+        manager.start();
+    }
+    
+    public static void construct(){
+    }
+
+    public static void addMyHandle(String handle) {
+        Middleware.serverStateLock.readLock().lock();
+        try {
+            synchronized (serverHandles) {
+                myHandle[0]=handle;
+                HashSet<String> handleSet = new HashSet();
+                handleSet.add(handle);
+                serverHandles.put(handle, handleSet);
+            }
+        } finally {
+            Middleware.serverStateLock.readLock().unlock();
+        }
+    }
+
+    private static Set<Action> getWork() {
+        Middleware.serverStateLock.readLock().lock();
+        Set<String> myServerHandles = getMyServerHandles();
+        Set<Action> myWork = new HashSet();
+        try {
+            synchronized (jobs) {
+                for (String handle : myServerHandles) {
+                    Set<Integer> handleGames = jobs.get(handle);
+                    if (handleGames == null) {
+                        continue;
+                    }
+                    Set<Integer> myGames = new HashSet(handleGames);
+                    for (Integer gameID : myGames) {
+                        Action gameAction = actions.get(gameID);
+                        if (gameAction == null) {
+                            Set<Integer> temp = jobs.get(handle);
+                            temp.remove(gameID);
+                            jobs.put(handle, temp);
+                        } else {
+                            myWork.add(gameAction);
+                        }
+                    }
+                }
+            }
+        } finally {
+            Middleware.serverStateLock.readLock().unlock();
+        }
+        return myWork;
+    }
+
+    public static void playerChange(String server, HashSet<String> recipients, Game game) {
+        logger.log(Level.INFO, "{0} -> playerChange in game:{2}.", new Object[]{Thread.currentThread().getName(), game.getGameID()});
+        addWork(server, "playerChange", recipients, game, null);
+    }
+
+    public static void gameStart(String server, HashSet<String> recipients, Game game) {
+        logger.log(Level.INFO, "{0} -> gameStart in game:{2}.", new Object[]{Thread.currentThread().getName(), game.getGameID()});
+        addWork(server, "gameStart", recipients, game, null);
+    }
+
+    public static void gameEnd(String server, HashSet<String> recipients, Game game, ArrayDeque<MoveInfo> moves) {
+        logger.log(Level.INFO, "{0} -> gameEnd in game:{2}.", new Object[]{Thread.currentThread().getName(), game.getGameID()});
+        addWork(server, "gameEnd", recipients, game, moves);
+    }
+
+    private static void addWork(String server, String type, HashSet<String> recipients, Game game, ArrayDeque<MoveInfo> moves) {
+
+        Middleware.serverStateLock.readLock().lock();
+        try {
+            //updating worloads
+            synchronized (jobs) {
+                Action savedAction = actions.get(game.getGameID());
+                if (savedAction != null) {
+                    if ((game.getVersion()) < (savedAction.game.getVersion())) {
+                        return;
+                    }
+                    if ((game.getVersion()) == (savedAction.game.getVersion())) {
+                        recipients.retainAll(savedAction.recipients);
+                    }
+                    if (!savedAction.server.equals(server)) {
+                        //removes job from old jobhandler (server)
+                        Set<Integer> serverJobs = jobs.get(savedAction.server);
+                        if (serverJobs != null) {
+                            serverJobs.remove(game.getGameID());
+                            if (!serverJobs.isEmpty()) {
+                                jobs.put(savedAction.server, serverJobs);
+                            }
+                        }
+                    }
+                }
+                if (recipients.isEmpty()) {
+                    actions.remove(game.getGameID());
+                    return;
+                }
+                // gives job to new jobhandler (server)
+                Set<Integer> serverJobs = new HashSet();
+                if (jobs.get(server) != null) {
+                    serverJobs.addAll(jobs.get(server));
+                }
+                serverJobs.add(game.getGameID());
+                jobs.put(server, serverJobs);
+
+                //update recipients and game.getGameInfo()
+                Action action = new Action(server, type, recipients, game, moves);
+                actions.put(game.getGameID(), action);
+            }
+        } finally {
+            Middleware.serverStateLock.readLock().unlock();
+            logger.log(Level.INFO, "{0} -> work added for:{2}.", new Object[]{Thread.currentThread().getName(), game.getGameID()});
+        }
+        manager.interrupt();
+    }
+
+    public static void takeOverFor(String activeServer, String offlineServer) {
+
+        Middleware.serverStateLock.readLock().lock();
+        try {
+            synchronized (serverHandles) {
+                Set<String> offlineHandles = serverHandles.remove(offlineServer);
+                if (offlineHandles == null) {
+                    return;
+                }
+                Set<String> activeHandles = serverHandles.get(activeServer);
+                activeHandles.addAll(offlineHandles);
+                serverHandles.put(activeServer, activeHandles);
+            }
+        } finally {
+            Middleware.serverStateLock.readLock().unlock();
+        }
+    }
+
+    public static Set<String> getMyServerHandles() {
+        Middleware.serverStateLock.readLock().lock();
+        Set<String> myHandles = new HashSet();
+        try {
+            synchronized (serverHandles) {
+                Set<String> tmp = serverHandles.get(myHandle[0]);
+                if(tmp!=null){
+                    myHandles.addAll(tmp);
+                }
+            }
+        } finally {
+            Middleware.serverStateLock.readLock().unlock();
+        }
+        return myHandles;
+    }
+
+    public static class Action implements Serializable{
+
+        final String server;
+        final String type;
+        final HashSet<String> recipients;
+        final Game game;
+        final ArrayDeque<MoveInfo> moves;
+
+        Action(String server, String type, HashSet<String> recipients, Game game, ArrayDeque<MoveInfo> moves) {
+            this.server = server;
+            this.type = type;
+            this.recipients = recipients;
+            this.game = game;
+            this.moves = moves;
+        }
+
+        private Set<String> run() {
+            HashSet<String> recipientsLeft = new HashSet(this.recipients);
+            for (String connection : this.recipients) {
+                switch (type) {
+                    case "playerChange":
+                        if (ToClient.playerChange(connection, game)) {
+                            recipientsLeft.remove(connection);
+                        }
+                        break;
+                    case "gameStart":
+                        if (ToClient.gameStart(connection, game)) {
+                            recipientsLeft.remove(connection);
+                        }
+                        break;
+                    case "gameEnd":
+                        if (ToClient.gameEnd(connection, moves)) {
+                            AsynchronSpreadMessage.sendForceLeaveGame(connection, game.getGameID());
+                            recipientsLeft.remove(connection);
+                        }
+                        break;
+                    default:
+                        break;
+                }
+            }
+            if (recipientsLeft.size() < this.recipients.size()) {
+                switch (type) {
+                    case "playerChange":
+                        AsynchronSpreadMessage.sendPlayerChange(server, recipientsLeft, game);
+                        break;
+                    case "gameStart":
+                        AsynchronSpreadMessage.sendGameStart(server, recipientsLeft, game);
+                        break;
+                    case "gameEnd":
+                        AsynchronSpreadMessage.sendGameEnd(server, recipientsLeft, game, moves);
+                        break;
+                    default:
+                        break;
+                }
+            }
+            return recipientsLeft;
+        }
+
+        private void removeFromJobs() {
+
+            Middleware.serverStateLock.readLock().lock();
+            try {
+                synchronized (jobs) {
+                    Action current = actions.get(this.game.getGameID());
+                    if (current.game.getVersion() == this.game.getVersion()) {
+                        actions.remove(this.game.getGameID());
+                    }
+                }
+            } finally {
+                Middleware.serverStateLock.readLock().unlock();
+            }
+        }
+    }
+}

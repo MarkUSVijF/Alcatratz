@@ -1,0 +1,54 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.server.local;
+
+import java.io.IOException;
+import net.technikumwien.bic4b18_01.server.connectionMW.ConnectionOUT;
+import java.net.MalformedURLException;
+import java.rmi.RemoteException;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import net.technikumwien.bic4b18_01.common.settings.LoggerSettings;
+import static net.technikumwien.bic4b18_01.common.assist.TODO.MORE;
+import spread.SpreadException;
+
+/*
+        IClient2ServerLogic registerLogic = ConnectionLogic.getInstance();
+        
+        System.out.println("Starting up clientside service...");
+        registerLogic.construct(); //creates a connection 2 the lobby server
+        System.out.println("clientside service up and running...");
+ */
+/**
+ *
+ * @author Florian
+ */
+public class ServerApplication {
+
+    private static final Logger logger = Logger.getLogger(ServerApplication.class.getName());
+
+    static {
+        try {
+            LoggerSettings.initLogging();
+        } catch (IOException ex) {
+            logger.log(Level.SEVERE, "{0} -> logger could not be started", Thread.currentThread().getName());
+        }
+
+        try {
+            ConnectionOUT.construct();
+        } catch (RemoteException | MalformedURLException ex) {
+            logger.log(Level.SEVERE, "{0} -> server could not be set up", Thread.currentThread().getName());
+            System.exit(1);
+        } catch (SpreadException ex) {
+            logger.log(Level.SEVERE, "{0} -> some spread problem", Thread.currentThread().getName());
+            System.exit(1);
+        }
+    }
+    public static void main(String args[]) {
+
+        MORE.todo(ServerApplication.class.getName(),"anything like a gui?");
+    }
+}

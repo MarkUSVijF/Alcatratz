@@ -1,0 +1,63 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.client.rmi;
+
+import at.falb.games.alcatraz.api.Alcatraz;
+import java.net.MalformedURLException;
+import java.rmi.Naming;
+import java.rmi.NotBoundException;
+import java.rmi.RemoteException;
+import java.rmi.registry.LocateRegistry;
+import java.rmi.server.UnicastRemoteObject;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import net.technikumwien.bic4b18_01.common.rmi.RMI_Client2Client;
+
+/**
+ *
+ *
+ */
+public class Alcatraz_TestClient_B {
+    private static Alcatraz game = new Alcatraz();
+       
+ public static void main(String args[]) {
+        RMI_Client2Client c2c = new Client2Client();
+         try {
+         UnicastRemoteObject.exportObject(c2c, 1100);
+     } catch (RemoteException ex) {
+         Logger.getLogger(Alcatraz_TestClient_B.class.getName()).log(Level.SEVERE, null, ex);
+     }
+        RMI_Client2Client outgoing = new Client2Client();
+     try {
+         LocateRegistry.createRegistry(1100);
+     } catch (RemoteException ex) {
+         Logger.getLogger(Alcatraz_TestClient_B.class.getName()).log(Level.SEVERE, null, ex);
+     }
+        while (true) {
+            try {
+                Naming.rebind("rmi://localhost:1100/AlcatrazGameService", c2c);
+                break;
+            } catch (RemoteException | MalformedURLException ex) {
+                Logger.getLogger(Alcatraz_TestClient_B.class.getName()).log(Level.SEVERE, null, ex);
+            }
+        }
+        while (true) {
+            try {
+                outgoing = (RMI_Client2Client) Naming.lookup("rmi://localhost:1099/AlcatrazGameService");
+                break;
+            } catch (NotBoundException | MalformedURLException | RemoteException ex) {
+                Logger.getLogger(Alcatraz_TestClient_B.class.getName()).log(Level.SEVERE, null, ex);
+            }
+        }
+        
+        game.init(2, 1);
+        game.getPlayer(0).setName("Player 1");
+        game.getPlayer(1).setName("Player 2");
+        game.showWindow();
+        game.addMoveListener(new AlcatrazTestMoveListener(outgoing));
+        game.start();
+    }
+}

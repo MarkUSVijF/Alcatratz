@@ -1,0 +1,212 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.server.rmi;
+
+import java.io.Serializable;
+import java.lang.invoke.WrongMethodTypeException;
+import java.rmi.RemoteException;
+import java.rmi.server.RemoteServer;
+import java.rmi.server.ServerNotActiveException;
+import java.text.MessageFormat;
+import java.util.ArrayDeque;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.Random;
+import java.util.Set;
+import java.util.UUID;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import net.technikumwien.bic4b18_01.common.assist.TraceHelper;
+import net.technikumwien.bic4b18_01.common.exception.ConnectionException;
+import net.technikumwien.bic4b18_01.common.exception.GameException;
+import net.technikumwien.bic4b18_01.common.rmi.GameInfo;
+import net.technikumwien.bic4b18_01.common.rmi.MoveInfo;
+import net.technikumwien.bic4b18_01.common.rmi.RMI_Client2Server;
+import net.technikumwien.bic4b18_01.common.assist.TODO;
+import net.technikumwien.bic4b18_01.server.common.ClientRequests;
+import net.technikumwien.bic4b18_01.server.common.GameList;
+import net.technikumwien.bic4b18_01.server.common.Response;
+import net.technikumwien.bic4b18_01.server.common.ServerData;
+import net.technikumwien.bic4b18_01.server.connectionMW.ConnectionOUT;
+
+/**
+ *
+ * @author Florian
+ */
+public class Client2Server implements RMI_Client2Server {
+
+    private final ServerData.RMI RMIdata;
+    private static final Logger logger = Logger.getLogger(TraceHelper.getClassName());
+
+    public Client2Server() {
+
+        RMIdata = ServerData.RMI.getInstance();
+    }
+
+    /**
+     *
+     * @param cUID
+     * @param port
+     * @return 
+     * @throws RemoteException
+     * @throws ConnectionException
+     */
+    @Override
+    public String registerClient(UUID cUID, int port) throws RemoteException, ConnectionException {
+        
+        String clientConnection = getClientConnection(port);
+        logger.log(Level.INFO, "RMI -> new registration attempt {0}.", clientConnection);
+        try {
+            ClientRequests.getResponse(clientConnection, cUID.hashCode(), "registerClient");
+            return clientConnection;
+        } catch (NoSuchElementException ex) {
+            logger.log(Level.INFO, "RMI -> new Request for {0} with NR {1}.", new Object[]{clientConnection, cUID.hashCode()});
+        } catch (GameException | WrongMethodTypeException ex) {
+            // exceptions that shouldn't get thrown
+            logger.log(Level.SEVERE, "RMI -> RequestNR {0} already used for {1}.", new Object[]{cUID.hashCode(), clientConnection});
+            throw new ConnectionException("RequestNr " + cUID + " already used for a different request.");
+        }
+        
+
+        if(ClientRequests.existsClient(clientConnection)){
+            logger.log(Level.WARNING, "RMI -> {0} already in use.", clientConnection);
+            throw new ConnectionException("port already taken");
+        }
+        //Die ID des aktuellen Threads wird an Spread mit weitergeleited
+        //Dies wird benötigt damit der Thread des Spread-Listeners uns wieder aufwecken kann (Scheduling)
+        ConnectionOUT.getSpreadDaemon().sendMessage_registerClient(Thread.currentThread().getId(), clientConnection, cUID.hashCode());
+        try {
+            ClientRequests.awaitResponse(clientConnection, cUID.hashCode(), "registerClient");
+        } catch (GameException ex) {
+            Logger.getLogger(Client2Server.class.getName()).log(Level.SEVERE, "RMI -> threw unreasonable exception in unreachable catch block");
+        }
+        return clientConnection;
+    }
+
+    @Override
+    public Set<GameInfo> getGames(int port) throws RemoteException, ConnectionException {
+        String clientConnection = getClientConnection(port);
+        logger.log(Level.INFO, "RMI -> {0} request current open games.", clientConnection);
+        return GameList.getOpenGames();
+    }
+
+    @Override
+    public GameInfo getGameInfo(int port, int gameID) throws RemoteException, ConnectionException, GameException {
+        String clientConnection = getClientConnection(port);
+        logger.log(Level.INFO, "RMI -> {0} request current open games.", clientConnection);
+        return GameList.getGameInfo(gameID);
+    }
+
+    @Override
+    public GameInfo hostGame(int port, int reqNR, int players, String playerName) throws RemoteException, ConnectionException, GameException {
+        String clientConnection = getClientConnection(port);
+        try {
+            return (GameInfo) ClientRequests.getResponse(clientConnection, reqNR, "hostGame");
+        } catch (NoSuchElementException ex) {
+            logger.log(Level.INFO, "RMI -> new Request for {0} with NR {1}.", new Object[]{clientConnection, reqNR});
+        } catch (WrongMethodTypeException ex) {
+            // exceptions that shouldn't get thrown
+            logger.log(Level.SEVERE, "RMI -> RequestNR {0} already used for {1}.", new Object[]{reqNR, clientConnection});
+            throw new ConnectionException("RequestNr " + reqNR + " already used for a different request.");
+        }
+        //Die ID des aktuellen Threads wird an Spread mit weitergeleited
+        //Dies wird benötigt damit der Thread des Spread-Listeners uns wieder aufwecken kann (Scheduling)
+        ConnectionOUT.getSpreadDaemon().sendMessage_hostGame(Thread.currentThread().getId(), clientConnection, reqNR, players, playerName);
+        return (GameInfo) ClientRequests.awaitResponse(clientConnection, reqNR, "hostGame");
+    }
+
+    @Override
+    public GameInfo joinGame(int port, int reqNR, int gameID, String playerName) throws RemoteException, ConnectionException, GameException {
+        String clientConnection = getClientConnection(port);
+        try {
+            return (GameInfo) ClientRequests.getResponse(clientConnection, reqNR, "joinGame");
+        } catch (NoSuchElementException ex) {
+            logger.log(Level.INFO, "RMI -> new Request for {0} with NR {1}.", new Object[]{clientConnection, reqNR});
+        } catch (WrongMethodTypeException ex) {
+            // exceptions that shouldn't get thrown
+            logger.log(Level.SEVERE, "RMI -> RequestNR {0} already used for {1}.", new Object[]{reqNR, clientConnection});
+            throw new ConnectionException("RequestNr " + reqNR + " already used for a different request.");
+        }
+        //Die ID des aktuellen Threads wird an Spread mit weitergeleited
+        //Dies wird benötigt damit der Thread des Spread-Listeners uns wieder aufwecken kann (Scheduling)
+        ConnectionOUT.getSpreadDaemon().sendMessage_joinGame(Thread.currentThread().getId(), clientConnection, reqNR, gameID, playerName);
+        return (GameInfo) ClientRequests.awaitResponse(clientConnection, reqNR, "joinGame");
+    }
+
+    @Override
+    public void leaveGame(int port, int reqNR) throws RemoteException, ConnectionException, GameException {
+         String clientConnection = getClientConnection(port);
+        try {
+            ClientRequests.getResponse(clientConnection, reqNR, "leaveGame");
+            return;
+        } catch (NoSuchElementException ex) {
+            logger.log(Level.INFO, "RMI -> new Request for {0} with NR {1}.", new Object[]{clientConnection, reqNR});
+        } catch (WrongMethodTypeException ex) {
+            // exceptions that shouldn't get thrown
+            logger.log(Level.SEVERE, "RMI -> RequestNR {0} already used for {1}.", new Object[]{reqNR, clientConnection});
+            throw new ConnectionException("RequestNr " + reqNR + " already used for a different request.");
+        }
+        //Die ID des aktuellen Threads wird an Spread mit weitergeleited
+        //Dies wird benötigt damit der Thread des Spread-Listeners uns wieder aufwecken kann (Scheduling)
+        ConnectionOUT.getSpreadDaemon().sendMessage_leaveGame(Thread.currentThread().getId(), clientConnection, reqNR);
+        ClientRequests.awaitResponse(clientConnection, reqNR, "leaveGame");    
+    }
+
+    @Override
+    public void endGame(int port, int reqNR, ArrayDeque<MoveInfo> lastMoves) throws RemoteException, ConnectionException, GameException {
+         String clientConnection = getClientConnection(port);
+        try {
+            ClientRequests.getResponse(clientConnection, reqNR, "endGame");
+            return;
+        } catch (NoSuchElementException ex) {
+            logger.log(Level.INFO, "RMI -> new Request for {0} with NR {1}.", new Object[]{clientConnection, reqNR});
+        } catch (WrongMethodTypeException ex) {
+            // exceptions that shouldn't get thrown
+            logger.log(Level.SEVERE, "RMI -> RequestNR {0} already used for {1}.", new Object[]{reqNR, clientConnection});
+            throw new ConnectionException("RequestNr " + reqNR + " already used for a different request.");
+        }
+        //Die ID des aktuellen Threads wird an Spread mit weitergeleited
+        //Dies wird benötigt damit der Thread des Spread-Listeners uns wieder aufwecken kann (Scheduling)
+        ConnectionOUT.getSpreadDaemon().sendMessage_endGame(Thread.currentThread().getId(), clientConnection, reqNR, lastMoves);
+        ClientRequests.awaitResponse(clientConnection, reqNR, "endGame");    
+    }
+
+    @Override
+    public String unregisterClient(int port, int reqNR) throws RemoteException, ConnectionException, GameException {
+         String clientConnection = getClientConnection(port);
+        try {
+            ClientRequests.getResponse(clientConnection, reqNR, "unregisterClient");
+            return clientConnection;
+        } catch (NoSuchElementException ex) {
+            logger.log(Level.INFO, "RMI -> new Request for {0} with NR {1}.", new Object[]{clientConnection, reqNR});
+        } catch (WrongMethodTypeException ex) {
+            // exceptions that shouldn't get thrown
+            logger.log(Level.SEVERE, "RMI -> RequestNR {0} already used for {1}.", new Object[]{reqNR, clientConnection});
+            throw new ConnectionException("RequestNr " + reqNR + " already used for a different request.");
+        }
+        //Die ID des aktuellen Threads wird an Spread mit weitergeleited
+        //Dies wird benötigt damit der Thread des Spread-Listeners uns wieder aufwecken kann (Scheduling)
+        ConnectionOUT.getSpreadDaemon().sendMessage_unregisterClient(Thread.currentThread().getId(), clientConnection, reqNR);
+        ClientRequests.awaitResponse(clientConnection, reqNR, "unregisterClient");
+        return clientConnection;
+    }
+
+    //##########################################################################
+    private String getClientConnection(int port) throws RemoteException, ConnectionException {
+        String clientConnection = null;
+        try {
+            //Die IP-Adresse des anfragenden Clients wird geholt und gespeichert
+            clientConnection = RemoteServer.getClientHost() + ":" + MessageFormat.format("{0,number,#}", port);
+            logger.log(Level.INFO, "RMI -> incomming client connection from {0}.", clientConnection);
+        } catch (ServerNotActiveException ex) {
+            logger.log(Level.SEVERE, "RMI -> server not started. [HOW?]", ex);
+            throw new RemoteException("server not started [HOW?]");
+        }
+        return clientConnection;
+    }
+}

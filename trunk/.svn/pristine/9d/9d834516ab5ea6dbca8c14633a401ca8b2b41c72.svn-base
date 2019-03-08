@@ -1,0 +1,14 @@
+@echo off
+if "x%JAVA_HOME%" == "x" (call set-env.bat)
+
+echo build in netbeans!
+echo.
+::echo compiling spread
+::call compile-spread.bat
+::echo.
+
+echo starting spread
+call run-spread.bat
+
+echo EOF
+goto :eof

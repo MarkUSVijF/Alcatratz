@@ -1,0 +1,192 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.server.connectionMW;
+
+import java.io.File;
+import java.io.IOException;
+import java.io.InterruptedIOException;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import net.technikumwien.bic4b18_01.common.assist.RUID;
+import net.technikumwien.bic4b18_01.common.assist.TODO;
+import net.technikumwien.bic4b18_01.common.assist.TraceHelper;
+import static net.technikumwien.bic4b18_01.common.assist.TraceHelper.getTrunk;
+import static net.technikumwien.bic4b18_01.server.spread.Spread_Groups.client2server;
+import static net.technikumwien.bic4b18_01.server.spread.Spread_Groups.server2server;
+import spread.MessageFactory;
+import spread.SpreadConnection;
+import spread.SpreadException;
+import spread.SpreadGroup;
+import spread.SpreadMessage;
+
+/**
+ * package access only
+ * @author Florian
+ */
+class ToServer implements IServer2ServerMW {
+
+    private static RUID serverID = null;
+    private static SpreadConnection connection_low = null;
+    private static MessageFactory msg_low = null;
+    private static SpreadConnection connection_high = null;
+    private static MessageFactory msg_high = null;
+    private static final Logger logger = Logger.getLogger(TraceHelper.getClassName());
+
+    private ToServer() {
+    }
+
+    public static ToServer getInstance() {
+        return InstanceHolder.INSTANCE;
+    }
+
+    private static class InstanceHolder {
+
+        private static final ToServer INSTANCE = new ToServer();
+    }
+
+    static void construct() throws SpreadException {
+
+        File trunk = getTrunk();
+        Set<String> daemonIPs = new HashSet();
+        SpreadGroup group;
+        SpreadMessage msg;
+        Character serverRUID_low = 'A';
+        Character serverRUID_high = 'B';
+
+        try {
+            List<String> lines = Files.readAllLines(Paths.get(trunk.getPath() + "\\spread\\src\\main\\java\\net\\technikumwien\\bic4b18_01\\spread\\local\\daemon.ip"));
+            for (String line : lines) {
+                daemonIPs.add(line);
+            }
+            // cleansing daemon.ip
+            logger.log(Level.INFO, "daemon.ip successfully read");
+        } catch (IOException ex) {
+            Logger.getLogger(ConnectionOUT.class.getName()).log(Level.SEVERE, "daemon.ip unreadable");
+        }
+        daemonIPs.remove("");
+
+        logger.log(Level.INFO, "creating serverRUID");
+        serverID = RUID.new_9();
+
+        logger.log(Level.INFO, "joining spread groups with: #{0}_#", serverID);
+
+        for (String ip : daemonIPs) {
+            try {
+                InetAddress ia = InetAddress.getByName(ip);
+
+                //low priority == client requests
+                connection_low = new SpreadConnection();
+                connection_low.connect(ia, 9101, serverID.toString() + serverRUID_low, false, false);
+                group = new SpreadGroup();
+                group.join(connection_low, client2server.toString());
+                msg = new SpreadMessage();
+                msg.setSafe();
+                msg.addGroup(client2server.toString());
+                msg_low = new MessageFactory(msg);
+                logger.log(Level.INFO, "spread group #{0}# connected with #{1}{2}#", new Object[]{client2server, serverID, serverRUID_low});
+
+                //high priority == server requests
+                connection_high = new SpreadConnection();
+                connection_high.connect(ia, 9101, serverID.toString() + serverRUID_high, false, true);
+                group = new SpreadGroup();
+                group.join(connection_high, server2server.toString());
+                msg = new SpreadMessage();
+                msg.setSafe();
+                msg.addGroup(server2server.toString());
+                msg_high = new MessageFactory(msg);
+                logger.log(Level.INFO, "spread group #{0}# connected with #{1}{2}#", new Object[]{server2server, serverID, serverRUID_high});
+
+                break;
+            } catch (UnknownHostException | SpreadException ex) {
+                //Logger.getLogger(ConnectionMW.class.getName()).log(Level.SEVERE, null, ex);
+            }
+        }
+        if (connection_low == null || connection_high == null) {
+            throw new SpreadException();
+        }
+
+        //##################################################################
+        TODO.todo(ConnectionOUT.class.getName(), "finish spread implementation");
+
+        logger.log(Level.INFO, "creating testMSG");
+        Priority prio = Priority.HIGH;
+        msg = generateMsg(prio);
+        msg.setObject("getUpdate");
+        logger.log(Level.INFO, "sending testMSG");
+        getConnection(prio).multicast(msg);
+        logger.log(Level.INFO, "receiving:");
+        SpreadMessage incomming;
+        try {
+            while (true) {
+                // waiting for my message to be recieved
+                incomming = getConnection(prio).receive();
+                if (incomming.isMembership()) {
+                    logger.log(Level.INFO, "received membershipMSG {0}", new Object[]{incomming.getMembershipInfo().getGroup().toString()});
+                    continue;
+                }
+                if (incomming.getSender().toString().contains(serverID.toString())) {
+                    break;
+                }
+            }
+            logger.log(Level.INFO, "received testMSG [Msg.equal={0}] [Load.equal={1}]", new Object[]{msg.equals(incomming), "getUpdate".equals((String) (incomming.getObject()))});
+
+        } catch (InterruptedIOException ex) {
+            logger.log(Level.INFO, "no testMsg recieved - interrupted");
+
+        }
+    }
+
+    static void destruct() throws SpreadException {
+        serverID = null;
+        if (connection_low != null) {
+            connection_low.disconnect();// pretty dirty
+            connection_low = null;
+        }
+        if (connection_high != null) {
+            connection_high.disconnect();// pretty dirty
+            connection_high = null;
+        }
+        msg_low = null;
+        msg_high = null;
+    }
+
+    //######################################################################
+    private static SpreadMessage generateMsg(Priority priority) {
+        switch (priority) {
+            case HIGH:
+                return msg_high.createMessage();
+            case LOW:
+                return msg_low.createMessage();
+            default:
+                return null;
+        }
+    }
+
+    private static SpreadConnection getConnection(Priority priority) {
+        switch (priority) {
+            case HIGH:
+                return connection_high;
+            case LOW:
+                return connection_low;
+            default:
+                return null;
+        }
+    }
+
+    private enum Priority {
+        HIGH, LOW;
+    }
+
+    //######################################################################
+    //public methods {sendMSG(payload);}
+}

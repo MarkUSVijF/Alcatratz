@@ -1,0 +1,105 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.client.connectionMW;
+
+import java.net.MalformedURLException;
+import java.rmi.RemoteException;
+import java.rmi.registry.LocateRegistry;
+import java.rmi.server.UnicastRemoteObject;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import net.technikumwien.bic4b18_01.common.assist.TraceHelper;
+
+/**
+ *
+ * @author Florian
+ */
+public class ConnectionOUT {
+    private static int constructed = -1;
+    private static final Byte LOCK_CONSTRUCTED = 0;
+    private static final Logger logger = Logger.getLogger(TraceHelper.getClassName());
+
+    public static void construct() {
+        synchronized (LOCK_CONSTRUCTED) {
+            if (constructed > -1) {
+                return;
+            }
+            constructed = 0;
+        }
+        logger.log(Level.INFO, "Starting up clientside service...");
+
+        while (true) {
+            String connection = ToServer.construct();
+            try {
+                ToClient.construct(connection);
+                break;
+            } catch (RemoteException | MalformedURLException ex) {
+                logger.log(Level.SEVERE, "local registry error [HOW?]", ex);
+                ToServer.destruct();
+                int port = Integer.parseInt(connection.substring(connection.indexOf(':')+1));
+                try {
+                    UnicastRemoteObject.unexportObject(LocateRegistry.getRegistry(port), true);
+                } catch (RemoteException ex1) {
+                    logger.log(Level.INFO, "localRegistry already unexported", ex1);
+                }
+                //-> need to free port too. no idea how tho
+            }
+        }
+
+        logger.log(Level.INFO, "clientside service up and running...");
+
+        synchronized (LOCK_CONSTRUCTED) {
+            constructed = 1;
+        }
+    }
+
+    public static void destruct() {
+        synchronized (LOCK_CONSTRUCTED) {
+            if (constructed == -1) {
+                return;
+            }
+        }
+        while (true) {
+            synchronized (LOCK_CONSTRUCTED) {
+                if (constructed == 1) {
+                    String connection = ToServer.destruct();
+                    ToClient.destruct(connection);
+                    int port = Integer.parseInt(connection.substring(connection.indexOf(':')+1));
+                    try {
+                        UnicastRemoteObject.unexportObject(LocateRegistry.getRegistry(port), true);
+                    } catch (RemoteException ex) {
+                        logger.log(Level.SEVERE, "destruction of localregistry on port " + port + "not possible", ex);
+                    }
+                    //
+                    constructed = -1;
+                }
+                if (constructed == -1) {
+                    break;
+                }
+            }
+            try {
+                Thread.sleep((30 / 1) * 1000);// timeout 30s
+            } catch (InterruptedException ex) {
+                logger.log(Level.INFO, "wake up call");
+            }
+        }
+    }
+
+    public static boolean isConstructed() {
+        synchronized (LOCK_CONSTRUCTED) {
+            return constructed == 1;
+        }
+    }
+
+    public static IClient2ServerMW getToServer() {
+        return ToServer.getInstance();
+    }
+
+    public static IClient2ClientMW getToClient() {
+        return ToClient.getInstance();
+    }
+            
+}

@@ -1,0 +1,44 @@
+package net.technikumwien.bic4b18_01.client.local;
+
+import java.io.IOException;
+import net.technikumwien.bic4b18_01.client.connectionMW.ConnectionMW;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import net.technikumwien.bic4b18_01.client.connectionMW.IClient2ClientMW;
+import net.technikumwien.bic4b18_01.client.connectionMW.IClient2ServerMW;
+import net.technikumwien.bic4b18_01.common.exception.ConnectionException;
+import net.technikumwien.bic4b18_01.common.settings.LoggerSettings;
+import static net.technikumwien.bic4b18_01.common.settings.TODO.MORE;
+
+public class ClientApplication {
+
+    /**
+     * 
+     * @param args 
+     */
+    public static void main(String[] args) {
+        
+        try {
+            LoggerSettings.initLogging();
+        } catch (IOException ex) {
+            Logger.getLogger(ClientApplication.class.getName()).log(Level.SEVERE, "logger could not be started", ex);
+        }
+        ConnectionMW.construct(); //creates a connection 2 the lobby server
+        
+        IClient2ServerMW registerConnection = ConnectionMW.getToServerMW();
+        try {
+            registerConnection.getGames();
+        } catch (ConnectionException ex) {
+            Logger.getLogger(ClientApplication.class.getName()).log(Level.SEVERE, "NIY", ex);
+        }
+        /**
+         * moar stuff TODO
+         */
+        MORE.todo(ClientApplication.class.getName()); // like api an such
+        
+        
+        IClient2ClientMW gameConnection = ConnectionMW.getToClientMW();
+        
+        ConnectionMW.destruct();
+    }
+}

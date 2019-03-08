@@ -1,0 +1,38 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.client.rmi;
+
+import java.rmi.RemoteException;
+import java.util.ArrayDeque;
+import net.technikumwien.bic4b18_01.common.rmi.MoveInfo;
+import net.technikumwien.bic4b18_01.common.rmi.RMI_Client2Client;
+
+/**
+ *
+ * @author Florian
+ */
+public class Client2Client implements RMI_Client2Client {
+    
+    public Client2Client(){
+        
+    }
+    
+    @Override
+    public void setMove(int moveID, MoveInfo move) throws RemoteException {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public void setHeartbeat(int moveID) throws RemoteException {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public ArrayDeque<MoveInfo> getUpdate(int lastKnownMoveID) throws RemoteException {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+    
+}

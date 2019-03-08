@@ -1,0 +1,43 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.server.spread;
+
+import net.technikumwien.bic4b18_01.server.connectionMW.Spread;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import net.technikumwien.bic4b18_01.common.assist.TraceHelper;
+import spread.SpreadException;
+import spread.SpreadGroup;
+import spread.SpreadMessage;
+
+/**
+ *
+ * @author Florian
+ */
+public class PrivatSpreadMessage {
+
+    private static final Logger logger = Logger.getLogger(TraceHelper.getClassName());
+
+    /**
+     *
+     * @param sm
+     * @param resipient get by message.getSender();
+     * @throws SpreadException
+     */
+    public static void deliverTo(SpreadMessage sm, SpreadGroup resipient) throws SpreadException {
+
+        sm.setSafe();
+        sm.addGroup(resipient);
+        Spread.connection.multicast(sm);
+    }
+
+    public static void process(SpreadMessage sm) throws SpreadException {
+        switch (sm.getType()) {
+            default:
+                logger.log(Level.INFO, Thread.currentThread().getName()+" -> #{0} received unknown private message from {1}.", new Object[]{Spread.getServerID().toString(), sm.getSender().toString()});
+        }
+    }
+}

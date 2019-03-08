@@ -1,0 +1,92 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.common.rmi;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import static net.technikumwien.bic4b18_01.common.assist.LocalNetwork.getMyIPs;
+import net.technikumwien.bic4b18_01.common.assist.TODO;
+import static net.technikumwien.bic4b18_01.common.assist.TraceHelper.getTrunk;
+
+/**
+ *
+ * @author Florian
+ */
+public class ServerIPs {
+
+    private static final int MINPORT = 1100;
+    private static final int MAXPORT = 9100;
+    private static final Map<String, Set<String>> serverAddresses;
+    private static final Set<String> rmiAddresses;
+
+    static {
+        serverAddresses = new HashMap();
+        rmiAddresses = new HashSet();
+        final Set<String> serverIPs = new HashSet();
+        Set<String> lineSet;
+        try {
+            lineSet = new HashSet(Files.readAllLines(Paths.get(getTrunk().getPath() + "\\common\\src\\main\\java\\net\\technikumwien\\bic4b18_01\\common\\settings\\servers.txt")));
+
+        } catch (IOException ex) {
+            Logger.getLogger(ServerIPs.class.getName()).log(Level.SEVERE, "servers.txt could not be read!", ex);
+
+            lineSet = new HashSet();
+        }
+        lineSet.stream().filter((s) -> (!s.startsWith("#"))).forEachOrdered((s) -> {
+            serverIPs.add(s);
+        });
+        serverIPs.remove("");
+
+            // spread addresses
+        serverIPs.forEach((serverIP) -> {
+            String subNet = String.valueOf(serverIP.subSequence(0, serverIP.lastIndexOf('.'))) + ".255:" + (MAXPORT + 1);
+            Set<String> subNetIPs = serverAddresses.get(subNet);
+            if (subNetIPs == null) {
+                subNetIPs = new HashSet();
+            }
+            subNetIPs.add(serverIP);
+            serverAddresses.put(subNet, subNetIPs);
+        });
+
+            // rmi addresses
+            TODO.todo(ServerIPs.class.getName(), "update to retain all & split");
+        serverIPs.retainAll(getMyIPs());
+        serverIPs.forEach((serverIP) -> {
+            String subNet = String.valueOf(serverIP.subSequence(0, serverIP.lastIndexOf('.'))) + ".255:" + (MAXPORT + 1);
+            Set<String> subNetIPs = serverAddresses.get(subNet);
+            if (subNetIPs == null) {
+                subNetIPs = new HashSet();
+            }
+            subNetIPs.add(serverIP);
+            rmiAddresses.add(serverIP + ":" + (MINPORT - 1));
+        });
+    }
+
+    public static Set<String> rmi() {
+        return ServerIPs.rmiAddresses;
+    }
+
+    public static Map<String, Set<String>> spread() {
+        return ServerIPs.serverAddresses;
+    }
+
+    public static int minPort() {
+        return MINPORT;
+    }
+
+    public static int maxPort() {
+        return MAXPORT;
+    }
+}

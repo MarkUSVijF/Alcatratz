@@ -1,0 +1,47 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.client.rmi;
+
+import apllicationMW.GameConnection;
+import at.falb.games.alcatraz.api.Alcatraz;
+import java.rmi.RemoteException;
+import java.util.ArrayDeque;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import net.technikumwien.bic4b18_01.common.assist.TraceHelper;
+import net.technikumwien.bic4b18_01.common.rmi.MoveInfo;
+import net.technikumwien.bic4b18_01.common.rmi.RMI_Client2Client;
+
+/**
+ *
+ * @author Florian
+ */
+public class Client2Client implements RMI_Client2Client {
+
+    private static final Logger logger = Logger.getLogger(TraceHelper.getClassName());
+
+    @Override
+    public void sendMove(String sender, MoveInfo move) throws RemoteException {
+        logger.log(Level.INFO, "{0} -> {1}.{2} - enter", new Object[]{Thread.currentThread().getName(), TraceHelper.getClassName(), TraceHelper.getMethodName()});
+        GameConnection.addMove(sender, move);
+        logger.log(Level.INFO, "{0} -> {1}.{2} - leave", new Object[]{Thread.currentThread().getName(), TraceHelper.getClassName(), TraceHelper.getMethodName()});
+    }
+    
+    @Override
+    public void sendHeartbeat(String sender, int moveID) throws RemoteException {
+        logger.log(Level.INFO, "{0} -> recieved Heartbeat from {1} with {2}", new Object[]{Thread.currentThread().getName(), sender, moveID});
+        if(moveID<=GameConnection.getLastMoveId()){
+            return;
+        }
+        GameConnection.getUpdateFrom(sender);
+    }
+
+    @Override
+    public ArrayDeque<MoveInfo> getUpdate() throws RemoteException {
+        logger.log(Level.INFO, "{0} -> got an update request", new Object[]{Thread.currentThread().getName()});
+        return GameConnection.getLastMoves();
+    }
+}

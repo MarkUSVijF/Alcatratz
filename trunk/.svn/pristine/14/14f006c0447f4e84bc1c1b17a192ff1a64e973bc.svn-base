@@ -1,0 +1,104 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.server.spread;
+
+import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import net.technikumwien.bic4b18_01.common.assist.RUID;
+import net.technikumwien.bic4b18_01.common.assist.TraceHelper;
+import net.technikumwien.bic4b18_01.common.exception.GameException;
+import net.technikumwien.bic4b18_01.server.common.ClientRequests;
+import net.technikumwien.bic4b18_01.server.common.Game;
+import net.technikumwien.bic4b18_01.server.common.Response;
+import spread.AdvancedMessageListener;
+import spread.SpreadException;
+import spread.SpreadMessage;
+
+/**
+ *
+ * @author Florian can listen to multiple groups!!!
+ */
+public class SpreadListener implements AdvancedMessageListener {
+
+    private static final Logger logger = Logger.getLogger(TraceHelper.getClassName());
+    private final RUID serverID;
+
+    public SpreadListener(RUID serverID) {
+        this.serverID = serverID;
+    }
+
+    @Override
+    public void regularMessageReceived(SpreadMessage sm) {
+        try {
+            switch (sm.getType()) {
+                case 0:
+                    logger.log(Level.INFO, "received testMSG [Payload of the message = {0}]", "testMSG".equals((String) (sm.getObject())));
+                    break;
+                case 1: //The HostGame Message is represented by the MessageType "1"
+                    processHostGameMessage(sm);
+                    break;
+                case 2:
+                    processJoinGameMessage(sm);
+                    break;
+                default:
+                    logger.log(Level.INFO, "received unknown message from {0}", sm.getSender().toString());
+            }
+        } catch (SpreadException ex) {
+            Logger.getLogger(SpreadListener.class.getName()).log(Level.SEVERE, null, ex);
+        }
+
+    }
+
+    @Override
+    public void membershipMessageReceived(SpreadMessage sm) {
+        logger.log(Level.INFO, "received membershipMSG {0}", new Object[]{sm.getMembershipInfo().getGroup().toString()});
+    }
+
+    private void processHostGameMessage(SpreadMessage sm) throws SpreadException {
+        //Die einzelnen Argumente werden aus dem digest wieder hergestellt (Header)
+        List digest = sm.getDigest();
+        long threadID = (long) digest.get(0);
+        String connection = (String) digest.get(1);
+        int requestNr = (int) digest.get(2);
+        int gameSize = (int) digest.get(3);
+        String playerName = (String) digest.get(4);
+        //Methoden Logic (Body)
+        Response current_response;
+        try {
+            Game newGame = new Game(gameSize, playerName, connection);
+            //Das Spiel muss noch in eine eigene "Spiel-Liste" gespeichert werden
+            current_response = new Response(requestNr, newGame.getGameInfo(), "GameInfo", "hostGame");
+        } catch (GameException ex) {
+            current_response = new Response(requestNr, ex, "GameException", "hostGame");
+        }
+        //Dieser Aufruf wird bei allen Methoden identisch zu implementieren sein (Footer)
+        ClientRequests.returnResponse(threadID, connection, playerName, current_response);
+    }
+
+    private void processJoinGameMessage(SpreadMessage sm) throws SpreadException {
+        //long threadID, String connection, int req, long gameID, String playerName
+        //Die einzelnen Argumente werden aus dem digest wieder hergestellt (Header)
+        List digest = sm.getDigest();
+        long threadID = (long) digest.get(0);
+        String connection = (String) digest.get(1);
+        int requestNr = (int) digest.get(2);
+        long gameID = (int) digest.get(3);
+        String playerName = (String) digest.get(4);
+        //Methoden Logic (Body)
+        Response current_response;
+        try {
+            //Game newGame = new Game(gameID, playerName, connection);
+            //Das Spiel muss noch in eine eigene "Spiel-Liste" gespeichert werden
+            current_response = new Response(requestNr, null, "GameInfo", "hostGame");
+            throw new GameException("TODO: implement Spiel-Liste");
+        } catch (GameException ex) {
+            current_response = new Response(requestNr, ex, "GameException", "hostGame");
+        }
+        //Dieser Aufruf wird bei allen Methoden identisch zu implementieren sein (Footer)
+        ClientRequests.returnResponse(threadID, connection, playerName, current_response);
+    }
+}

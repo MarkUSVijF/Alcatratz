@@ -1,0 +1,234 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.server.rmi;
+
+import at.falb.games.alcatraz.api.Player;
+import java.io.Serializable;
+import java.util.AbstractMap;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Deque;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import net.technikumwien.bic4b18_01.common.rmi.GameInfo;
+import net.technikumwien.bic4b18_01.common.rmi.MoveInfo;
+import net.technikumwien.bic4b18_01.server.common.Data;
+import net.technikumwien.bic4b18_01.server.common.Game;
+import net.technikumwien.bic4b18_01.server.common.GameList;
+import net.technikumwien.bic4b18_01.server.connectionMW.ToClient;
+import net.technikumwien.bic4b18_01.server.connectionMW.ToSpreadGroup;
+import net.technikumwien.bic4b18_01.server.spread.AsynchronSpreadMessage;
+
+/**
+ *
+ * @author Florian
+ */
+public class CallBackManager {
+    
+    private static final Thread manager;
+    
+    //which names this server reacts towards
+    private static final Map<String,Set<String>> serverHandles; //server -> reacts to servernames
+    private static final Set<String> myHandles; //which servernames I react to
+    //workload
+    private static final Map<String,Set<Integer>> jobs; //server -> Set of gameID
+    private static final Map<Integer,Action> actions; //gameID -> action
+    
+    
+    static {
+        serverHandles= new HashMap();
+        myHandles= new HashSet();
+        jobs= new HashMap();
+        actions= new HashMap();
+        manager = new Thread(() -> {
+            while(true){
+                for(Action action:getWork()){
+                    if(action.run().isEmpty()){
+                        action.removeFromJobs();
+                    }
+                }
+                try {
+                    Thread.sleep(10000);
+                } catch (InterruptedException ex){}
+            }
+        });
+        manager.setDaemon(true);
+        manager.start();
+    }
+    
+    public static void addMyHandle(String handle){
+        synchronized (serverHandles) {
+            myHandles.add(handle);
+        }
+    }
+    
+    private static Set<Action> getWork(){
+        Set<String> myServerHandles = getMyServerHandles();
+        Set<Action> myWork = new HashSet();
+        synchronized (jobs) {
+            Set<Integer> myGames = new HashSet();
+            for(String handle:myServerHandles){
+                Set<Integer> handleGames = jobs.get(handle);
+                if(handleGames!=null) myGames.addAll(handleGames);
+            }
+            for(Integer gameID:myGames){
+                Action gameAction = actions.get(gameID);
+                if(gameAction!=null) myWork.add(gameAction);
+            }
+        }
+        return myWork;
+    }
+    
+    public static void playerChange(String server, Set<String> recipients, Game game) {
+        addWork(server, "playerChange", recipients, game, null);
+    }
+    
+    public static void gameStart(String server, Set<String> recipients, Game game) {
+        addWork(server, "gameStart", recipients, game, null);
+    }
+    
+    public static void gameEnd(String server, Set<String> recipients, Game game, ArrayDeque<MoveInfo> moves) {
+        addWork(server, "gameEnd", recipients, game, moves);
+    }
+
+    private static void addWork(String server, String type, Set<String> recipients, Game game, ArrayDeque<MoveInfo> moves) {
+        
+        //updating worloads
+        synchronized (jobs) {
+            Action savedAction = actions.get(game.getGameID());
+            if (savedAction != null) {
+                if ((game.getVersion()) < (savedAction.game.getVersion())) {
+                    return;
+                }
+                if((game.getVersion()) == (savedAction.game.getVersion())){
+                    recipients.retainAll(savedAction.recipients);
+                }
+                if(!savedAction.server.equals(server)){
+                    //removes job from old jobhandler (server)
+                    Set<Integer> serverJobs = jobs.get(savedAction.server);
+                    if(serverJobs!=null){
+                        serverJobs.remove(game.getGameID());
+                        if(!serverJobs.isEmpty()){
+                            jobs.put(savedAction.server, serverJobs);
+                        }
+                    }
+                }
+            }
+            if(recipients.isEmpty()){
+                actions.remove(game.getGameID());
+                return;
+            }
+            // gives job to new jobhandler (server)
+            Set<Integer> serverJobs = new HashSet();
+            if (jobs.get(server) != null) {
+                serverJobs.addAll(jobs.get(server));
+            }
+            serverJobs.add(game.getGameID());
+            jobs.put(server, serverJobs);
+            
+            //update recipients and game.getGameInfo()
+            Action action = new Action(server, type, recipients, game, moves);
+            actions.put(game.getGameID(), action);
+        }
+        manager.interrupt();
+    }
+    
+    public static void takeOverFor(String activeServer, String offlineServer){
+        
+        synchronized(serverHandles){
+            Set<String> offlineHandles = serverHandles.remove(offlineServer);
+            if(offlineHandles==null){
+                return;
+            }
+            if(activeServer.contains(Data.getServerID().toString())){
+                myHandles.addAll(offlineHandles);
+                return;
+            }
+            Set<String> activeHandles = serverHandles.get(activeServer);
+            activeHandles.addAll(offlineHandles);
+            serverHandles.put(activeServer, activeHandles);
+        }
+    }
+    
+    public static Set<String> getMyServerHandles(){
+        synchronized(serverHandles){
+            return new HashSet(myHandles);
+        }
+    } 
+    
+    private static class Action{
+        final String server;
+        final String type;
+        final Set<String> recipients;
+        final Game game;
+        final ArrayDeque<MoveInfo> moves;
+        
+        Action(String server, String type,Set<String> recipients, Game game, ArrayDeque<MoveInfo> moves){
+            this.server=server;
+            this.type=type;
+            this.recipients=recipients;
+            this.game=game;
+            this.moves=moves;
+        }
+        
+        private Set<String> run(){
+            HashSet<String> recipientsLeft = new HashSet(this.recipients);
+            for(String connection:this.recipients) {
+                switch (type) {
+                    case "playerChange":
+                        if(ToClient.playerChange(connection, game)){
+                            recipientsLeft.remove(connection);
+                        }
+                        break;
+                    case "gameStart":
+                        if(ToClient.gameStart(connection, game)){
+                            recipientsLeft.remove(connection);
+                        }
+                        break;
+                    case "gameEnd":
+                        if(ToClient.gameEnd(connection, moves)){
+                            AsynchronSpreadMessage.sendForceLeaveGame(connection,game.getGameID());
+                            recipientsLeft.remove(connection);
+                        }
+                        break;
+                    default:
+                        break;
+                }
+            }
+            if(recipientsLeft.size()<this.recipients.size()){
+                switch (type) {
+                    case "playerChange":
+                        AsynchronSpreadMessage.sendPlayerChange(server, recipientsLeft, game);
+                        break;
+                    case "gameStart":
+                        AsynchronSpreadMessage.sendGameStart(server, recipientsLeft, game);
+                        break;
+                    case "gameEnd":
+                        AsynchronSpreadMessage.sendGameEnd(server, recipientsLeft, game, moves);
+                        break;
+                    default:
+                        break;
+                }
+            }
+            return recipientsLeft;
+        }
+        
+        private void removeFromJobs() {
+
+            synchronized (jobs) {
+                Action current = actions.get(this.game.getGameID());
+                if (current.game.getVersion() == this.game.getVersion()) {
+                    actions.remove(this.game.getGameID());
+                }
+            }
+        }
+    }
+}

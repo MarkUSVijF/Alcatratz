@@ -1,0 +1,13 @@
+Spread_Segment  172.16.0.255:9101 {
+
+	localhost		172.16.0.8
+}
+Spread_Segment  192.168.56.255:9101 {
+
+	BMR8gubmx		192.168.56.1
+	OBZsnxy3o		192.168.56.101
+	RFWuoy2up		192.168.56.102
+}
+DebugFlags = { PRINT EXIT SESSION GROUPS }
+EventPriority =  INFO
+EventTimeStamp = "[%y.%m.%d %H:%M-%S]"

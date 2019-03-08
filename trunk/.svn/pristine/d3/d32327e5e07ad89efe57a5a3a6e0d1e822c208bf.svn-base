@@ -1,0 +1,82 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.server.rmi;
+
+import at.falb.games.alcatraz.api.Player;
+import java.io.Serializable;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+import net.technikumwien.bic4b18_01.common.rmi.MoveInfo;
+import net.technikumwien.bic4b18_01.server.common.Game;
+
+/**
+ *
+ * @author Florian
+ */
+public class CallBackManager {
+    
+    private static final Thread manager;
+    private static Map<String,Map<String,Deque>> whoDoesWhatInWhichOrder;
+    //Map<ServerID,Map<ClientConnection,Deque<Actions>>> // player change?
+    
+    private static Map<Entry<String, List<Serializable>>,List<String>> elements;
+    //Map<Entry<MethodName,List<Parameters>>,List<spreadMembers>>
+    
+    static {
+        manager = new Thread(() -> {
+            
+        });
+        manager.setDaemon(true);
+        manager.start();
+    }
+    
+    public static void wakeUP(){
+        manager.interrupt();
+    }
+    
+    public static void playerJoined(final String connection, final Game game) {
+        /*
+        Deque <String>gameConnection = new ArrayDeque();
+        gameConnection.addAll(game.getConnections());
+        while(!gameConnection.isEmpty()){
+            String c = gameConnection.pop();
+            if(c.equals(connection)) continue;
+            RMI_Server2Client proxy = generateStubTo(c);
+            try {
+                proxy.playerJoined(game.getPlayer(connection));
+            } catch (RemoteException ex) {
+                gameConnection.push(c);
+            } catch (GameException ex) {
+                logger.log(Level.SEVERE, "[HOW?] unreachable statement", ex);
+            }
+        }
+        */
+    }
+
+    public static void playerLeft(final Player player, final Game game) {
+        /*
+         for(String c: game.getConnections()){
+            RMI_Server2Client proxy = generateStubTo(c);
+            try {
+                proxy.playerLeft(player);
+            } catch (RemoteException ex) {
+                // Needs retry to proxy
+            }
+         }
+        */
+    }
+
+    public static void startGame(final Game game) {
+        //throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    public static void closeGame(final Game game, final ArrayDeque<MoveInfo> moves) {
+        //throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+}

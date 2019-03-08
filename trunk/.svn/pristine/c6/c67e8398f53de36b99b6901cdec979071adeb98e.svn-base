@@ -1,0 +1,461 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.client.connectionMW;
+
+import java.net.MalformedURLException;
+import java.rmi.Naming;
+import java.rmi.NoSuchObjectException;
+import java.rmi.NotBoundException;
+import java.rmi.RemoteException;
+import java.rmi.registry.LocateRegistry;
+import java.rmi.registry.Registry;
+import java.rmi.server.UnicastRemoteObject;
+import java.util.ArrayDeque;
+import java.util.HashSet;
+import java.util.UUID;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import net.technikumwien.bic4b18_01.client.rmi.Server2Client;
+import net.technikumwien.bic4b18_01.common.assist.TraceHelper;
+import net.technikumwien.bic4b18_01.common.exception.ConnectionException;
+import net.technikumwien.bic4b18_01.common.exception.GameException;
+import net.technikumwien.bic4b18_01.common.rmi.GameInfo;
+import net.technikumwien.bic4b18_01.common.rmi.MoveInfo;
+import net.technikumwien.bic4b18_01.common.rmi.RMI_Client2Server;
+import net.technikumwien.bic4b18_01.common.rmi.RMI_Server2Client;
+import static net.technikumwien.bic4b18_01.common.rmi.RMI_Services.client2server;
+import static net.technikumwien.bic4b18_01.common.rmi.RMI_Services.server2client;
+import net.technikumwien.bic4b18_01.common.rmi.Server;
+
+/**
+ * package access only
+ * @author Florian
+ */
+class ToServer implements IClient2ServerMW {
+
+        /**
+         *
+         */
+        private static Data DATA;
+        private static final Logger logger = Logger.getLogger(TraceHelper.getClassName());
+
+        private ToServer() {
+        }
+
+        public static ToServer getInstance() {
+            return InstanceHolder.INSTANCE;
+        }
+
+        private static class InstanceHolder {
+
+            private static final ToServer INSTANCE = new ToServer();
+        }
+
+        static String construct() {
+
+            logger.log(Level.INFO, "creating client-constructtion UUID");
+            UUID clientCUID = UUID.randomUUID(); //
+
+            DATA = Data.getInstance();
+            Registry localRegistry;
+            String connection;
+            int port;
+            int requestNr = 0;
+
+            //get a stub
+            while (true) {
+                try {
+                    //get free port starting with port (clientID = IP:port)
+                    connection = connectWith(clientCUID);
+                    if(connection==null) continue;
+                    port = Integer.parseInt(connection.substring(connection.indexOf(':')+1));
+                    logger.log(Level.INFO, "global portID is {0}", "" + port);
+                } catch (ConnectionException ex1) {
+                    //no free port
+                    logger.log(Level.SEVERE, "no free port for your IP", ex1);
+                    try {
+                        Thread.sleep((30 / 1) * 1000);// timeout 30s
+                    } catch (InterruptedException ex2) {
+                        //wakeUP
+                    }
+                    continue;
+                }
+                requestNr++;
+                try {
+                    //register local registry
+                    localRegistry = LocateRegistry.createRegistry(port);
+                    logger.log(Level.INFO, "localRegistry created on {0}", "" + port);
+                } catch (RemoteException ex1) {
+                    //could not create registry on port
+                    logger.log(Level.SEVERE, "could not create local registry on port: " + port, ex1);
+                    disconnect();
+                    port++;
+                    requestNr = 0;
+                    continue;
+                }
+                try {
+                    //bind RMI
+                    RMI_Server2Client server2clientSkeleton = new Server2Client();
+                    UnicastRemoteObject.exportObject(server2clientSkeleton, port);
+                    Naming.rebind("rmi://" + connection + "/" + server2client.toString(), server2clientSkeleton);
+                    logger.log(Level.INFO, "{0} bound to {1}", new Object[]{server2client, "" + connection});
+                } catch (RemoteException | MalformedURLException ex1) {
+                    //shouldn't reach
+                    logger.log(Level.SEVERE, "local registry error [HOW?]", ex1);
+                    disconnect();
+                    port++;
+                    requestNr = 0;
+                    try {
+                        UnicastRemoteObject.unexportObject(localRegistry, true);
+                    } catch (NoSuchObjectException ex) {
+                        logger.log(Level.INFO, "localRegistry already unexported", ex);
+                    }
+                    //-> need to free port too. no idea how tho
+                    continue;
+                }
+                break;
+            }
+
+            //save everything in DATA
+            DATA.setConnection(connection);
+            DATA.setPort(port);
+            DATA.setRequestNr(requestNr);
+
+            return connection;
+        }
+
+        static String destruct() {
+
+            // server connection
+            String connection = DATA.getConnection();
+            disconnect();
+            try {
+                Naming.unbind("rmi://"+ connection + "/" + server2client.toString());
+            } catch (RemoteException | NotBoundException | MalformedURLException ex) {
+                logger.log(Level.WARNING, "could not unbind rmi service " + server2client.toString(), ex);
+            }
+            Data.destroyInstance();
+            return connection;
+        }
+
+        //######################################################################
+        //player driven functionalities
+        @Override
+        public HashSet<GameInfo> getGames()
+                throws ConnectionException {
+            if (DATA == null) {
+                throw new ConnectionException("server hasn't acknowledged this client - please use construct() first");
+            }
+            HashSet<GameInfo> games = null;
+            int port = DATA.getPort();
+            int requestNr = DATA.getRequestNr();
+            RMI_Client2Server stub = DATA.getStub();
+            while (true) {
+                try {
+                    games = stub.getGames(port, requestNr);
+                    break;
+                } catch (RemoteException ex1) {
+                    //server gone offline (no connection to current server)
+                    logger.log(Level.WARNING, "no connection to current server -> looking for different one", ex1);
+                    stub = generateStub();
+                }
+            }
+            requestNr++;
+            DATA.setRequestNr(requestNr);
+            DATA.setStub(stub);
+            return games;
+        }
+
+        @Override
+        public GameInfo hostGame(int players, String playerName)
+                throws GameException, ConnectionException {//throws exception: to few/many players
+            if (DATA == null) {
+                throw new ConnectionException("server hasn't acknowledged this client - please use construct() first");
+            }
+
+            GameInfo gameInfo = null;
+            int port = DATA.getPort();
+            int requestNr = DATA.getRequestNr();
+            RMI_Client2Server stub = DATA.getStub();
+            while (true) {
+                try {
+                    //Der tatsächliche RMI-Aufruf findet hier statt
+                    gameInfo = stub.hostGame(port, requestNr, players, playerName);
+                    break;
+                } catch (RemoteException ex1) {
+                    //server gone offline (no connection to current server)
+                    logger.log(Level.WARNING, "no connection to current server -> looking for different one", ex1);
+                    stub = generateStub();
+                }
+            }
+            requestNr++;
+            DATA.setRequestNr(requestNr);
+            DATA.setStub(stub);
+            return gameInfo;
+        }
+
+        @Override
+        public GameInfo joinGame(long gameID, String playerName)
+                throws GameException, ConnectionException {//throws exception: already full, no such game, player name already used
+            if (DATA == null) {
+                throw new ConnectionException("server hasn't acknowledged this client - please use construct() first");
+            }
+
+            GameInfo gameInfo = null;
+            int port = DATA.getPort();
+            int requestNr = DATA.getRequestNr();
+            RMI_Client2Server stub = DATA.getStub();
+            while (true) {
+                try {
+                    gameInfo = stub.joinGame(port, requestNr, gameID, playerName);
+                    break;
+                } catch (RemoteException ex1) {
+                    //server gone offline (no connection to current server)
+                    logger.log(Level.WARNING, "no connection to current server -> looking for different one", ex1);
+                    stub = generateStub();
+                }
+            }
+            requestNr++;
+            DATA.setRequestNr(requestNr);
+            DATA.setStub(stub);
+            return gameInfo;
+        }
+
+        @Override
+        public void leaveGame()
+                throws GameException, ConnectionException {//throws exception: already full, no such game
+            if (DATA == null) {
+                throw new ConnectionException("server hasn't acknowledged this client - please use construct() first");
+            }
+
+            int port = DATA.getPort();
+            int requestNr = DATA.getRequestNr();
+            RMI_Client2Server stub = DATA.getStub();
+            while (true) {
+                try {
+                    DATA.getStub().leaveGame(port, requestNr);
+                    break;
+                } catch (RemoteException ex1) {
+                    //server gone offline (no connection to current server)
+                    logger.log(Level.WARNING, "no connection to current server -> looking for different one", ex1);
+                    stub = generateStub();
+                }
+            }
+            requestNr++;
+            DATA.setRequestNr(requestNr);
+            DATA.setStub(stub);
+        }
+
+        @Override
+        public void closeApp() {
+            throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+        }
+
+        //######################################################################
+        // automatic functionalities
+        public void endGame(ArrayDeque<MoveInfo> lastMoves)
+                throws GameException, ConnectionException {
+
+            if (DATA == null) {
+                throw new ConnectionException("server hasn't acknowledged this client - please use construct() first");
+            }
+            int port = DATA.getPort();
+            int requestNr = DATA.getRequestNr();
+            RMI_Client2Server stub = DATA.getStub();
+            while (true) {
+                try {
+                    stub.endGame(port, requestNr, lastMoves);
+                } catch (RemoteException ex) {
+                    //server gone offline (no connection to current server)
+                    logger.log(Level.WARNING, "no connection to current server -> looking for different one", ex);
+                    stub = generateStub();
+                }
+                break;
+            }
+            requestNr++;
+            DATA.setRequestNr(requestNr);
+            DATA.setStub(stub);
+        }
+
+        //######################################################################
+        private static RMI_Client2Server generateStub() {
+
+            logger.log(Level.INFO, "generating stub");
+            RMI_Client2Server stub = null;
+            while (true) {
+                for (String serverIP : Server.adresses()) {
+                    logger.log(Level.INFO, "trying stub for {0}", serverIP);
+                    try {
+                        stub = (RMI_Client2Server) Naming.lookup("rmi://" + serverIP + "/" + client2server.toString());
+                        logger.log(Level.INFO, "stub to {0} generated", serverIP);
+                        break;
+                    } catch (NotBoundException | MalformedURLException | RemoteException ex) {
+                        logger.log(Level.INFO, "can not generate stub to {0} at this time", serverIP);
+                        logger.log(Level.FINEST, "detailed:", ex);
+                    }
+                }
+                if (stub == null) {
+                    //no server online (client offline)
+                    logger.log(Level.SEVERE, "no connection to any server -> retrying later");
+                    try {
+                        Thread.sleep((30 / 1) * 1000);// timeout 30s
+                    } catch (InterruptedException ex3) {
+                        //wakeUP
+                    }
+                    continue;
+                }
+                break;
+            }
+            return stub;
+        }
+
+        /**
+         *
+         * @param stub
+         * @param port
+         * @return
+         * @throws RemoteException
+         */
+        private static String connectWith(UUID cUID) throws ConnectionException {
+
+            int port;
+            int revervedPort;
+            RMI_Client2Server stub = DATA.getStub();
+            if (stub == null) {
+                stub = generateStub();
+            }
+            while (true) {
+                try {
+
+                    logger.log(Level.INFO, "getting a possible Port from server");
+                    revervedPort = stub.reservePort(cUID);
+                    logger.log(Level.INFO, "reserved Port: {0}", "" + revervedPort);
+                    break;
+                } catch (RemoteException ex) {
+                    logger.log(Level.INFO, "stub is unreachable");
+                    stub = generateStub();
+                } catch (ConnectionException ex) {
+                    logger.log(Level.INFO, "no port free for this IP at the time");
+                    try {
+                        Thread.sleep((30 / 1) * 1000);// timeout 30s
+                    } catch (InterruptedException ex3) {
+                        //wakeUP
+                    }
+                }
+            }
+            port = revervedPort;
+            while (true) {
+                try {
+                    logger.log(Level.INFO, "trying to get port {0} in servercollective", "" + port);
+                    String connection = stub.registerClient(cUID, port); //throws exception: port taken
+                    logger.log(Level.INFO, "got connection on port: {0}", "" + port);
+                    DATA.setConnection(connection);
+                    DATA.setPort(port);
+                    DATA.setStub(stub);
+                    return connection;
+                } catch (ConnectionException ex) {
+                    logger.log(Level.INFO, "port {0} already in use for this ip", "" + port);
+                    port++;//port used -> next one
+                } catch (RemoteException ex) {
+                    logger.log(Level.INFO, "stub is unreachable");
+                    stub = generateStub();
+                }
+                if (port > Server.maxPort()) {
+                    port = Server.minPort();
+                }
+                if (port == revervedPort) {
+                    //try all ports 1 time
+                    throw new ConnectionException("no free port slots found");
+                }
+            }
+        }
+
+        private static void disconnect() {
+
+            int port = DATA.getPort();
+            int requestNr = DATA.getRequestNr();
+            RMI_Client2Server stub = DATA.getStub();
+            while (true) {
+                try {
+                    stub.unregisterClient(port, requestNr);
+                    logger.log(Level.INFO, "disconnected from sever");
+                    break;
+                } catch (RemoteException | ConnectionException | GameException ex) {
+                    logger.log(Level.SEVERE, null, ex);
+                    stub = generateStub();
+                }
+            }
+        }
+
+        //######################################################################
+        /**
+         * used for client 2 server connections outside a game
+         */
+        private static class Data { //singleton
+
+            private RMI_Client2Server stub;
+            private String connection;
+            private int port;
+            private int requestNr;
+
+            private Data() {
+                this.stub = generateStub();
+                this.port = Server.maxPort();
+                this.requestNr = 0;
+            }
+
+            //##################################################################
+            public static Data getInstance() {
+                if (InstanceHolder.INSTANCE == null) {
+                    InstanceHolder.INSTANCE = new Data();
+                }
+                return InstanceHolder.INSTANCE;
+            }
+
+            public static void destroyInstance() {
+                InstanceHolder.INSTANCE = null;
+            }
+
+            private static class InstanceHolder {
+
+                private static Data INSTANCE = null;
+            }
+
+            //##################################################################
+            public RMI_Client2Server getStub() {
+                return this.stub;
+            }
+
+            public String getConnection() {
+                return this.connection;
+            }
+
+            public int getPort() {
+                return this.port;
+            }
+
+            public int getRequestNr() {
+                return this.requestNr;
+            }
+
+            public void setStub(RMI_Client2Server stub) {
+                this.stub = stub;
+            }
+
+            public void setConnection(String connection) {
+                this.connection = connection;
+            }
+
+            public void setPort(int port) {
+                this.port = port;
+            }
+
+            public void setRequestNr(int requestNr) {
+                this.requestNr = requestNr;
+            }
+        }
+    }
+    

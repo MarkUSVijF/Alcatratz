@@ -1,0 +1,320 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.server.connectionMW;
+
+import at.falb.games.alcatraz.api.Player;
+import java.io.InterruptedIOException;
+import java.net.MalformedURLException;
+import java.rmi.Naming;
+import java.rmi.NotBoundException;
+import java.rmi.RemoteException;
+import java.rmi.registry.LocateRegistry;
+import java.rmi.server.UnicastRemoteObject;
+import java.util.Random;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import java.util.stream.IntStream;
+import net.technikumwien.bic4b18_01.common.assist.Ascii;
+import net.technikumwien.bic4b18_01.common.assist.RUID;
+import net.technikumwien.bic4b18_01.common.rmi.RMI_Client2Server;
+import net.technikumwien.bic4b18_01.common.rmi.RMI_Server2Client;
+import net.technikumwien.bic4b18_01.common.settings.RMI_Services;
+import net.technikumwien.bic4b18_01.common.settings.TODO;
+import net.technikumwien.bic4b18_01.server.rmi.Client2Server;
+import static net.technikumwien.bic4b18_01.server.spread.Spread_Groups.client2server;
+import static net.technikumwien.bic4b18_01.server.spread.Spread_Groups.server2server;
+import spread.MessageFactory;
+import spread.SpreadConnection;
+import spread.SpreadException;
+import spread.SpreadGroup;
+import spread.SpreadMessage;
+
+/**
+ *
+ * @author Florian
+ * to setup all OUTGOING traffic
+ */
+public class ConnectionMW {
+
+    /**
+     * -1 not constructed
+     * 0 in construction
+     * 1 constructed
+     */
+    private static int constructed = -1;
+    private static final Byte LOCK_CONSTRUCTED = 0;
+
+    //##########################################################################
+    public static void construct() throws RemoteException, MalformedURLException, SpreadException {
+        synchronized (LOCK_CONSTRUCTED) {
+            if (constructed != -1) {
+                return;
+            }
+            constructed = 0;
+        }
+        
+        ToClient.construct();
+        ToServer.construct();
+
+        synchronized (LOCK_CONSTRUCTED) {
+            constructed = 1;
+        }
+    }
+
+    public static void destruct() throws SpreadException {
+        synchronized (LOCK_CONSTRUCTED) {
+            if (constructed == -1) {
+                return;
+            }
+        }
+        while (true) {
+            synchronized (LOCK_CONSTRUCTED) {
+                if (constructed == 1) {
+
+                    //destruct
+                    ToClient.destruct();
+                    ToServer.destruct();
+
+                    constructed = -1;
+                }
+                if (constructed == -1) {
+                    break;
+                }
+            }
+            try {
+                Thread.currentThread().wait((30 / 1) * 1000);// timeout 30s
+            } catch (InterruptedException ex) {
+                Logger.getLogger(ConnectionMW.class.getName()).log(Level.SEVERE, null, ex);
+            }
+        }
+    }
+
+    public static boolean isConstructed() {
+        synchronized (LOCK_CONSTRUCTED) {
+            return constructed == 1;
+        }
+    }
+
+    //##########################################################################
+    public static class ToClient implements IServer2ClientMW {
+
+        private ToClient() {
+        }
+
+        public static ToClient getInstance() {
+            return InstanceHolder.INSTANCE;
+        }
+
+        private static class InstanceHolder {
+
+            private static final ToClient INSTANCE = new ToClient();
+        }
+
+        private static void construct() throws RemoteException, MalformedURLException {
+
+            //rmi to client
+            Logger.getLogger(ConnectionMW.class.getName())
+                    .log(Level.INFO, "starting rmi server");
+            RMI_Client2Server client2server = new Client2Server();
+            LocateRegistry.createRegistry(1099);
+            UnicastRemoteObject.exportObject(client2server, 1099);
+            Naming.rebind("rmi://localhost:1099/" + RMI_Services.client2server.toString(), client2server);
+            Logger.getLogger(ConnectionMW.class.getName())
+                    .log(Level.INFO, "rmi server started");
+        }
+        
+        private static void destruct(){
+        
+        }
+
+        @Override
+        public void playerJoined(String connection, long gameID) throws RemoteException {
+            throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+        }
+
+        @Override
+        public void playerLeft(Player player, long gameID) throws RemoteException {
+            throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+        }
+
+        @Override
+        public void gameFull(long gameID) throws RemoteException {
+            throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+        }
+
+        @Override
+        public void gameEnded(long gameID) throws RemoteException {
+            throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+        }
+
+        private static RMI_Server2Client generateStubTo(String playerConnection) {
+
+            Logger.getLogger(ToClient.class.getName())
+                    .log(Level.INFO, "generating stub");
+            RMI_Server2Client stub = null;
+            while (true) {
+                Logger.getLogger(ToClient.class.getName())
+                        .log(Level.INFO, "trying to connect to {0}", playerConnection);
+                try {
+                    stub = (RMI_Server2Client) Naming.lookup("rmi://" + playerConnection + "/" + RMI_Services.server2client.toString());
+                    Logger.getLogger(ToClient.class.getName())
+                            .log(Level.INFO, "connected to {0}", playerConnection);
+                    break;
+                } catch (NotBoundException | MalformedURLException | RemoteException ex) {
+                    Logger.getLogger(ToClient.class.getName())
+                            .log(Level.INFO, "can not connect to {0} at this time", playerConnection);
+                    Logger.getLogger(ToClient.class.getName()).log(Level.FINEST, "detailed:", ex);
+                }
+                //client offline
+                Logger.getLogger(ToClient.class.getName()).log(Level.SEVERE, "no connection to client -> retrying later", new RemoteException("client offline"));
+                try {
+                    Thread.currentThread().wait((30 / 1) * 1000);// timeout 30s
+                } catch (InterruptedException ex3) {
+                    //wakeUP
+                }
+            }
+            return stub;
+        }
+    }
+
+    //##########################################################################
+    public static class ToServer implements IServer2ServerMW {
+
+        private static RUID serverID=null;
+        private static SpreadConnection connection_low=null;
+        private static MessageFactory msg_low=null;
+        private static SpreadConnection connection_high=null;
+        private static MessageFactory msg_high=null;
+
+        private ToServer() {
+        }
+
+        public static ToServer getInstance() {
+            return InstanceHolder.INSTANCE;
+        }
+
+        private static class InstanceHolder {
+
+            private static final ToServer INSTANCE = new ToServer();
+        }
+
+        private static void construct() throws SpreadException {
+            
+            SpreadGroup group;
+            SpreadMessage msg;
+            Character serverRUID_low='A';
+            Character serverRUID_high='B';
+
+            Logger.getLogger(ConnectionMW.class.getName())
+                    .log(Level.INFO, "creating serverRUID");
+            serverID=RUID.new_9();
+
+            Logger.getLogger(ConnectionMW.class.getName())
+                    .log(Level.INFO, "joining spread groups with: #{0}_#", serverID);
+
+            //low priority == client requests
+            connection_low = new SpreadConnection();
+            connection_low.connect(null, 9101, serverID.toString() + serverRUID_low, false, false);
+            group = new SpreadGroup();
+            group.join(connection_low, client2server.toString());
+            msg = new SpreadMessage();
+            msg.setSafe();
+            msg.addGroup(client2server.toString());
+            msg_low = new MessageFactory(msg);
+            Logger.getLogger(ConnectionMW.class.getName())
+                    .log(Level.INFO, "spread group #{0}# connected with #{1}{2}#", new Object[]{client2server, serverID, serverRUID_low});
+
+            //high priority == server requests
+            connection_high = new SpreadConnection();
+            connection_high.connect(null, 9101, serverID.toString() + serverRUID_high, false, true);
+            group = new SpreadGroup();
+            group.join(connection_high, server2server.toString());
+            msg = new SpreadMessage();
+            msg.setSafe();
+            msg.addGroup(server2server.toString());
+            msg_high = new MessageFactory(msg);
+            Logger.getLogger(ConnectionMW.class.getName())
+                    .log(Level.INFO, "spread group #{0}# connected with #{1}{2}#", new Object[]{server2server, serverID, serverRUID_high});
+            
+            //############################################
+            TODO.todo(ConnectionMW.class.getName(), "finish spread implementation");
+
+            Logger.getLogger(ConnectionMW.class.getName())
+                    .log(Level.INFO, "creating testMSG");
+            Priority prio = Priority.HIGH;
+            msg = generateMsg(prio);
+            msg.setObject("getUpdate");
+            Logger.getLogger(ConnectionMW.class.getName())
+                    .log(Level.INFO, "sending testMSG");
+            getConnection(prio).multicast(msg);
+            Logger.getLogger(ConnectionMW.class.getName())
+                    .log(Level.INFO, "receiving:");
+            SpreadMessage incomming;
+            try {
+                while (true) {
+                    // waiting for my message to be recieved
+                    incomming = getConnection(prio).receive();
+                    if (incomming.isMembership()) {
+                        Logger.getLogger(ConnectionMW.class.getName())
+                                .log(Level.INFO, "received membershipMSG {0}", new Object[]{incomming.getMembershipInfo().getGroup().toString()});
+                        continue;
+                    }
+                    if (incomming.getSender().toString().contains(serverID.toString())) {
+                        break;
+                    }
+                }
+                Logger.getLogger(ConnectionMW.class.getName())
+                        .log(Level.INFO, "received testMSG [Msg.equal={0}] [Load.equal={1}]", new Object[]{msg.equals(incomming), "getUpdate".equals((String) (incomming.getObject()))});
+
+            } catch (InterruptedIOException ex) {
+                Logger.getLogger(ConnectionMW.class.getName())
+                        .log(Level.INFO, "no testMsg recieved - interrupted");
+
+            }
+        }
+
+        private static void destruct() throws SpreadException {
+            serverID = null;
+            if (connection_low != null) {
+                connection_low.disconnect();// pretty dirty
+                connection_low = null;
+            }
+            if (connection_high != null) {
+                connection_high.disconnect();// pretty dirty
+                connection_high = null;
+            }
+            msg_low=null;
+            msg_high=null;
+        }
+
+        //######################################################################
+        private static SpreadMessage generateMsg(Priority priority) {
+            switch(priority) {
+                case HIGH:
+                    return msg_high.createMessage();
+                case LOW:
+                    return msg_low.createMessage();
+                default:
+                    return null;
+            }
+        }
+        
+        private static SpreadConnection getConnection(Priority priority){
+            switch(priority) {
+                case HIGH:
+                    return connection_high;
+                case LOW:
+                    return connection_low;
+                default:
+                    return null;
+            }
+        }
+        
+        private enum Priority{
+            HIGH, LOW;
+        }
+    }
+}

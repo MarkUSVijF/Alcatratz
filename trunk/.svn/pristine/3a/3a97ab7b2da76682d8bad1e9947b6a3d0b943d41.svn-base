@@ -1,0 +1,373 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.server.spread;
+
+import net.technikumwien.bic4b18_01.server.connectionMW.Spread;
+import java.lang.invoke.WrongMethodTypeException;
+import java.text.MessageFormat;
+import java.util.ArrayDeque;
+import java.util.HashSet;
+import java.util.List;
+import java.util.NoSuchElementException;
+import java.util.Set;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import net.technikumwien.bic4b18_01.common.assist.TraceHelper;
+import net.technikumwien.bic4b18_01.common.exception.ConnectionException;
+import net.technikumwien.bic4b18_01.common.exception.GameException;
+import net.technikumwien.bic4b18_01.common.rmi.GameInfo;
+import net.technikumwien.bic4b18_01.common.rmi.MoveInfo;
+import net.technikumwien.bic4b18_01.server.common.ClientRequests;
+import net.technikumwien.bic4b18_01.server.common.Game;
+import net.technikumwien.bic4b18_01.server.common.GameList;
+import net.technikumwien.bic4b18_01.server.common.Response;
+import net.technikumwien.bic4b18_01.server.rmi.CallBackManager;
+import spread.SpreadException;
+import spread.SpreadMessage;
+
+/**
+ *
+ * @author Florian
+ */
+public class SynchronSpreadMessage {
+
+    private static final Logger logger = Logger.getLogger(TraceHelper.getClassName());
+    private static final String GROUPNAME = "synchronSMGroup";
+
+    private static void deliver(SpreadMessage sm) throws SpreadException {
+
+        sm.setSafe();
+        sm.addGroup(GROUPNAME);
+        Spread.connection.multicast(sm);
+    }
+
+    public static String getGroupName() {
+        return GROUPNAME;
+    }
+
+    public static void process(SpreadMessage sm) throws SpreadException {
+        switch (sm.getType()) {
+            case 1:
+                processRegisterClientMessage(sm);
+                break;
+            case 2: //The HostGame Message is represented by the MessageType "1"
+                processHostGameMessage(sm);
+                break;
+            case 3:
+                processJoinGameMessage(sm);
+                break;
+            case 4:
+                processLeaveGameMessage(sm);
+                break;
+            case 5:
+                processEndGameMessage(sm);
+                break;
+            case 6:
+                processUnregisterClientMessage(sm);
+                break;
+            default:
+                logger.log(Level.INFO, "{0} -> #{1} received unknown synchron message from {2}.", new Object[]{Thread.currentThread().getName(), Spread.getServerID().toString(), sm.getSender().toString()});
+        }
+    }
+    
+    //##########################################################################
+    
+    public static void sendRegisterClient(long threadID, String clientConnection, int cUID) {
+        SpreadMessage message = new SpreadMessage();
+        message.setType((short) 1);
+        try {
+            message.digest(threadID);
+            message.digest(clientConnection);
+            message.digest(cUID);
+            deliver(message);
+        } catch (SpreadException ex) {
+            logger.log(Level.SEVERE, null, ex);
+        }
+    }
+
+    public static void sendHostGame(long threadID, String clientConnection, int reqNR, int players, String playerName) {
+        SpreadMessage message = new SpreadMessage();
+        message.setType((short) 2);
+        try {
+            message.digest(threadID);
+            message.digest(clientConnection);
+            message.digest(reqNR);
+            message.digest(players);
+            message.digest(playerName);
+            deliver(message);
+        } catch (SpreadException ex) {
+            logger.log(Level.SEVERE, null, ex);
+        }
+    }
+
+    public static void sendJoinGame(long threadID, String clientConnection, int reqNR, int gameID, String playerName) {
+        SpreadMessage message = new SpreadMessage();
+        message.setType((short) 3);
+        try {
+            message.digest(threadID);
+            message.digest(clientConnection);
+            message.digest(reqNR);
+            message.digest(gameID);
+            message.digest(playerName);
+            deliver(message);
+        } catch (SpreadException ex) {
+            logger.log(Level.SEVERE, null, ex);
+        }
+    }
+
+    public static void sendLeaveGame(long threadID, String clientConnection, int reqNR) {
+        SpreadMessage message = new SpreadMessage();
+        message.setType((short) 4);
+        try {
+            message.digest(threadID);
+            message.digest(clientConnection);
+            message.digest(reqNR);
+            deliver(message);
+        } catch (SpreadException ex) {
+            logger.log(Level.SEVERE, null, ex);
+        }
+    }
+
+    public static void sendEndGame(long threadID, String clientConnection, int reqNR, ArrayDeque<MoveInfo> lastMoves) {
+        SpreadMessage message = new SpreadMessage();
+        message.setType((short) 5);
+        try {
+            message.digest(threadID);
+            message.digest(clientConnection);
+            message.digest(reqNR);
+            message.digest(lastMoves);
+            deliver(message);
+        } catch (SpreadException ex) {
+            logger.log(Level.SEVERE, null, ex);
+        }
+    }
+
+    public static void sendUnregisterClient(long threadID, String clientConnection, int reqNR) {
+        SpreadMessage message = new SpreadMessage();
+        message.setType((short) 6);
+        try {
+            message.digest(threadID);
+            message.digest(clientConnection);
+            message.digest(reqNR);
+            deliver(message);
+        } catch (SpreadException ex) {
+            logger.log(Level.SEVERE, null, ex);
+        }
+    }
+
+    //##########################################################################
+    private static void processRegisterClientMessage(SpreadMessage sm) throws SpreadException {
+        //Die einzelnen Argumente werden aus dem digest wieder hergestellt (Header)
+        List digest = sm.getDigest();
+        long threadID = (long) digest.get(0);
+        String clientConnection = (String) digest.get(1);
+        int cUID = (int) digest.get(2);// to identify 2 different clients on one machine
+        logger.log(Level.INFO, "{0} -> register client {1} at {2}.", new Object[]{Thread.currentThread().getName(), MessageFormat.format("{0,number,#}", cUID), clientConnection} );
+        //
+        try {
+            ClientRequests.getResponse(clientConnection, cUID, "registerClient");
+            ClientRequests.wakeupThread(threadID);
+            return;
+        } catch (GameException | ConnectionException | WrongMethodTypeException ex) {
+            ClientRequests.wakeupThread(threadID);
+            return;
+        } catch (NoSuchElementException ex) {
+            logger.log(Level.INFO, "{0} -> new Request for {1} with NR {2}.", new Object[]{Thread.currentThread().getName(), clientConnection, MessageFormat.format("{0,number,#}", cUID)});
+        }
+        //Methoden Logic (Body)
+        Response current_response;
+        if (ClientRequests.existsClient(clientConnection)) {
+            logger.log(Level.WARNING, "{0} -> {1} already in use.", new Object[]{Thread.currentThread().getName(), clientConnection});
+            current_response = new Response(cUID, new ConnectionException("port already taken"), "ConnectionException", "registerClient");
+        } else {
+            current_response = new Response(cUID, null, "void", "registerClient");
+        }
+        //Dieser Aufruf wird bei allen Methoden identisch zu implementieren sein (Footer)
+        ClientRequests.returnResponse(threadID, clientConnection, sm.getSender().toString(), current_response);
+    }
+
+    private static void processHostGameMessage(SpreadMessage sm) throws SpreadException {
+        //Die einzelnen Argumente werden aus dem digest wieder hergestellt (Header)
+        List digest = sm.getDigest();
+        long threadID = (long) digest.get(0);
+        String clientConnection = (String) digest.get(1);
+        int requestNr = (int) digest.get(2);
+        int gameSize = (int) digest.get(3);
+        String playerName = (String) digest.get(4);
+        logger.log(Level.INFO, "{0} -> host game for {1} with size gameSize{2}.", new Object[]{Thread.currentThread().getName(), clientConnection, gameSize});
+        //
+        try {
+            ClientRequests.getResponse(clientConnection, requestNr, "hostGame");
+            ClientRequests.wakeupThread(threadID);
+            return;
+        } catch (GameException | ConnectionException | WrongMethodTypeException ex) {
+            ClientRequests.wakeupThread(threadID);
+            return;
+        } catch (NoSuchElementException ex) {
+            logger.log(Level.INFO, "{0} -> new Request for {1} with NR {2}.", new Object[]{Thread.currentThread().getName(), clientConnection, requestNr});
+        }
+        //Methoden Logic (Body)
+        Response current_response;
+        try {
+
+            GameInfo game = GameList.newGame(clientConnection, playerName, gameSize);
+
+            current_response = new Response(requestNr, game, "GameInfo", "hostGame");
+        } catch (GameException ex) {
+            current_response = new Response(requestNr, ex, "GameException", "hostGame");
+        }
+        //Dieser Aufruf wird bei allen Methoden identisch zu implementieren sein (Footer)
+        ClientRequests.returnResponse(threadID, clientConnection, sm.getSender().toString(), current_response);
+    }
+
+    private static void processJoinGameMessage(SpreadMessage sm) throws SpreadException {
+        //Die einzelnen Argumente werden aus dem digest wieder hergestellt (Header)
+        List digest = sm.getDigest();
+        long threadID = (long) digest.get(0);
+        String clientConnection = (String) digest.get(1);
+        int requestNr = (int) digest.get(2);
+        int gameID = (int) digest.get(3);
+        String playerName = (String) digest.get(4);
+        logger.log(Level.INFO, "{0} -> join game {1} with name {2}.", new Object[]{Thread.currentThread().getName(), gameID, playerName});
+        //
+        try {
+            ClientRequests.getResponse(clientConnection, requestNr, "joinGame");
+            ClientRequests.wakeupThread(threadID);
+            return;
+        } catch (GameException | ConnectionException | WrongMethodTypeException ex) {
+            ClientRequests.wakeupThread(threadID);
+            return;
+        } catch (NoSuchElementException ex) {
+            logger.log(Level.INFO, "{0} -> new Request for {1} with NR {2}.", new Object[]{Thread.currentThread().getName(), clientConnection, requestNr});
+        }
+        //Methoden Logic (Body)
+        Response current_response;
+        try {
+
+            Game game = GameList.addPlayerToGame(clientConnection, playerName, gameID);
+            Set<String> recipients=game.getConnections();
+            if(game.isFull()){
+                CallBackManager.gameStart(sm.getSender().toString(), recipients, game);
+            } else {
+                recipients.remove(clientConnection);
+                CallBackManager.playerChange(sm.getSender().toString(), recipients, game);
+            }
+            
+            current_response = new Response(requestNr, game.getGameInfo(), "GameInfo", "joinGame");
+        } catch (GameException ex) {
+            current_response = new Response(requestNr, ex, "GameException", "joinGame");
+        }
+        //Dieser Aufruf wird bei allen Methoden identisch zu implementieren sein (Footer)
+        ClientRequests.returnResponse(threadID, clientConnection, sm.getSender().toString(), current_response);
+    }
+
+    private static void processLeaveGameMessage(SpreadMessage sm) throws SpreadException {
+        //Die einzelnen Argumente werden aus dem digest wieder hergestellt (Header)
+        List digest = sm.getDigest();
+        long threadID = (long) digest.get(0);
+        String clientConnection = (String) digest.get(1);
+        int requestNr = (int) digest.get(2);
+        logger.log(Level.INFO, "{0} -> client at {1} tries to leave his game.", new Object[]{Thread.currentThread().getName(), clientConnection});
+        //
+        try {
+            ClientRequests.getResponse(clientConnection, requestNr, "leaveGame");
+            ClientRequests.wakeupThread(threadID);
+            return;
+        } catch (GameException | ConnectionException | WrongMethodTypeException ex) {
+            ClientRequests.wakeupThread(threadID);
+            return;
+        } catch (NoSuchElementException ex) {
+            logger.log(Level.INFO, "{0} -> new Request for {1} with NR {2}.", new Object[]{Thread.currentThread().getName(), clientConnection, requestNr});
+        }
+        //Methoden Logic (Body)
+        Response current_response;
+        try {
+
+            Game game = GameList.removePlayerFromHisGame(clientConnection);
+            Set<String> recipients = game.getConnections();
+            CallBackManager.playerChange(sm.getSender().toString(), recipients, game);
+
+            current_response = new Response(requestNr, null, "void", "leaveGame");
+        } catch (GameException ex) {
+            current_response = new Response(requestNr, ex, "GameException", "leaveGame");
+        }
+        //Dieser Aufruf wird bei allen Methoden identisch zu implementieren sein (Footer)
+        ClientRequests.returnResponse(threadID, clientConnection, sm.getSender().toString(), current_response);
+    }
+
+    private static void processEndGameMessage(SpreadMessage sm) throws SpreadException {
+        //Die einzelnen Argumente werden aus dem digest wieder hergestellt (Header)
+        List digest = sm.getDigest();
+        long threadID = (long) digest.get(0);
+        String clientConnection = (String) digest.get(1);
+        int requestNr = (int) digest.get(2);
+        ArrayDeque<MoveInfo> lastMoves = (ArrayDeque) digest.get(3);
+        logger.log(Level.INFO, "{0} -> client {1} won his game.", new Object[]{Thread.currentThread().getName(), clientConnection});
+        //
+        try {
+            ClientRequests.getResponse(clientConnection, requestNr, "endGame");
+            ClientRequests.wakeupThread(threadID);
+            return;
+        } catch (GameException | ConnectionException | WrongMethodTypeException ex) {
+            ClientRequests.wakeupThread(threadID);
+            return;
+        } catch (NoSuchElementException ex) {
+            logger.log(Level.INFO, "{0} -> new Request for {1} with NR {2}.", new Object[]{Thread.currentThread().getName(), clientConnection, requestNr});
+        }
+        //Methoden Logic (Body)
+        Response current_response;
+        try {
+
+            Game game = GameList.closeMyGame(clientConnection);
+            Set<String> recipients=game.getConnections();
+            CallBackManager.gameEnd(sm.getSender().toString(), recipients, game, lastMoves);
+
+            current_response = new Response(requestNr, null, "void", "endGame");
+        } catch (GameException ex) {
+            current_response = new Response(requestNr, ex, "GameException", "endGame");
+        }
+        //Dieser Aufruf wird bei allen Methoden identisch zu implementieren sein (Footer)
+        ClientRequests.returnResponse(threadID, clientConnection, sm.getSender().toString(), current_response);
+    }
+
+    private static void processUnregisterClientMessage(SpreadMessage sm) throws SpreadException {
+        //Die einzelnen Argumente werden aus dem digest wieder hergestellt (Header)
+        List digest = sm.getDigest();
+        long threadID = (long) digest.get(0);
+        String clientConnection = (String) digest.get(1);
+        int requestNr = (int) digest.get(2);
+        logger.log(Level.INFO, "{0} -> client at {1} tries to unregister.", new Object[]{Thread.currentThread().getName(), clientConnection});
+        //
+        try {
+            ClientRequests.getResponse(clientConnection, requestNr, "unregisterClient");
+            ClientRequests.wakeupThread(threadID);
+            return;
+        } catch (GameException | ConnectionException | WrongMethodTypeException ex) {
+            ClientRequests.wakeupThread(threadID);
+            return;
+        } catch (NoSuchElementException ex) {
+            logger.log(Level.INFO, "{0} -> new Request for {1} with NR {2}.", new Object[]{Thread.currentThread().getName(), clientConnection, requestNr});
+        }
+        //Methoden Logic (Body)
+        Response current_response;
+        try {
+
+            Game game = GameList.removePlayerFromHisGame(clientConnection);
+            if (game != null) {
+                Set<String> recipients = game.getConnections();
+                CallBackManager.playerChange(sm.getSender().toString(), recipients, game);
+            }
+            GameList.unregisterClient(clientConnection);
+            ClientRequests.unregisterClient(clientConnection);
+
+            current_response = new Response(requestNr, null, "void", "unregisterClient");
+        } catch (GameException ex) {
+            current_response = new Response(requestNr, ex, "GameException", "unregisterClient");
+        }
+        //Dieser Aufruf wird bei allen Methoden identisch zu implementieren sein (Footer)
+        ClientRequests.returnResponse(threadID, clientConnection, sm.getSender().toString(), current_response);
+    }
+}

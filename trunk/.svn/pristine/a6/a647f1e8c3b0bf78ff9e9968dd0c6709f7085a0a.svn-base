@@ -1,0 +1,48 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.client.appllicationMW;
+
+import at.falb.games.alcatraz.api.MoveListener;
+import at.falb.games.alcatraz.api.Player;
+import at.falb.games.alcatraz.api.Prisoner;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import net.technikumwien.bic4b18_01.common.assist.TraceHelper;
+import net.technikumwien.bic4b18_01.common.exception.GameException;
+import net.technikumwien.bic4b18_01.common.rmi.MoveInfo;
+
+/**
+ *
+ * @author Florian
+ */
+public class GameListener implements MoveListener{
+    private static final Logger logger = Logger.getLogger(TraceHelper.getClassName());
+
+    @Override
+    public void moveDone(Player player, Prisoner prisoner, int rowOrCol, int row, int col) {
+        logger.log(Level.INFO, "{0} -> {1}.{2} - enter", new Object[]{Thread.currentThread().getName(), TraceHelper.getClassName(), TraceHelper.getMethodName()});
+        GameConnection.sendMove(new MoveInfo(GameConnection.getLastMoveId()+1, player, prisoner, rowOrCol, row, col));
+        logger.log(Level.INFO, "{0} -> {1}.{2} - leave", new Object[]{Thread.currentThread().getName(), TraceHelper.getClassName(), TraceHelper.getMethodName()});
+    }
+
+    @Override
+    public void gameWon(Player player) {
+        logger.log(Level.INFO, "{0} -> {1}.{2} - enter", new Object[]{Thread.currentThread().getName(), TraceHelper.getClassName(), TraceHelper.getMethodName()});
+        try {
+            if (player.getId() == GameConnection.myPlayerID) {
+                ToServer.endGame(GameConnection.getLastMoves());
+                logger.log(Level.INFO, "{0} -> sent my win to server", new Object[]{Thread.currentThread().getName()});
+            }
+        } catch (GameException ex) {
+            Logger.getLogger(GameListener.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        GameConnection.stopGame();
+        //}
+        logger.log(Level.INFO, "{0} -> stopped my lokal game (waiting for server connection)", new Object[]{Thread.currentThread().getName()});
+        logger.log(Level.INFO, "{0} -> {1}.{2} - leave", new Object[]{Thread.currentThread().getName(), TraceHelper.getClassName(), TraceHelper.getMethodName()});
+    }
+    
+}

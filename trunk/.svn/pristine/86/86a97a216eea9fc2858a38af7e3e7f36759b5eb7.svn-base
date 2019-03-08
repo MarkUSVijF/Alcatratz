@@ -1,0 +1,45 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.server.spread;
+
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import net.technikumwien.bic4b18_01.common.assist.RUID;
+import net.technikumwien.bic4b18_01.common.assist.TraceHelper;
+import spread.AdvancedMessageListener;
+import spread.SpreadException;
+import spread.SpreadMessage;
+
+/**
+ *
+ * @author Florian can listen to multiple groups!!!
+ */
+public class Server2Server implements AdvancedMessageListener {
+    private static final Logger logger = Logger.getLogger(TraceHelper.getClassName());
+    private final RUID serverID;
+
+    public Server2Server(RUID serverID) {
+        this.serverID = serverID;
+    }
+    
+    @Override
+    public void regularMessageReceived(SpreadMessage sm) {
+        if (!(sm.getSender().toString().contains(serverID.toString()))) {
+            return;
+        }
+        try {
+            logger.log(Level.INFO, "received testMSG [Payload of the message = {0}]", "testMSG".equals((String) (sm.getObject())));
+        } catch (SpreadException ex) {
+            Logger.getLogger(Server2Server.class.getName()).log(Level.SEVERE, null, ex);
+        }
+
+    }
+
+    @Override
+    public void membershipMessageReceived(SpreadMessage sm) {
+        logger.log(Level.INFO, "received membershipMSG {0}", new Object[]{sm.getMembershipInfo().getGroup().toString()});
+    }
+}

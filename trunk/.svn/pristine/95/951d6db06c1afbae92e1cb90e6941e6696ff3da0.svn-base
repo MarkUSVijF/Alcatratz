@@ -1,0 +1,121 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.server.connectionMW;
+
+import at.falb.games.alcatraz.api.Player;
+import java.net.MalformedURLException;
+import java.rmi.Naming;
+import java.rmi.NotBoundException;
+import java.rmi.RemoteException;
+import java.rmi.registry.LocateRegistry;
+import java.rmi.server.UnicastRemoteObject;
+import java.util.Set;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import static net.technikumwien.bic4b18_01.common.assist.LocalNetwork.getIPv4;
+import net.technikumwien.bic4b18_01.common.assist.TraceHelper;
+import net.technikumwien.bic4b18_01.common.rmi.RMI_Client2Server;
+import net.technikumwien.bic4b18_01.common.rmi.RMI_Server2Client;
+import net.technikumwien.bic4b18_01.common.rmi.RMI_Services;
+import net.technikumwien.bic4b18_01.common.rmi.Server;
+import net.technikumwien.bic4b18_01.server.rmi.Client2Server;
+
+/**
+ * package access only
+ * @author Florian
+ */
+class ToClient implements IServer2ClientMW {
+
+    private static final Logger logger = Logger.getLogger(TraceHelper.getClassName());
+
+    private ToClient() {
+    }
+
+    public static ToClient getInstance() {
+        return InstanceHolder.INSTANCE;
+    }
+
+    private static class InstanceHolder {
+
+        private static final ToClient INSTANCE = new ToClient();
+    }
+
+    static void construct() throws RemoteException, MalformedURLException {
+
+        Set<String> ips = getIPv4();
+        ips.retainAll(Server.adresses());
+
+        logger.log(Level.INFO, "starting rmi server");
+        LocateRegistry.createRegistry(1099);
+        int n = 0;
+        //rmi to client
+        for (String ip : ips) {
+            System.setProperty("java.rmi.server.hostname", ip);
+            RMI_Client2Server client2server = new Client2Server();
+            try {
+                UnicastRemoteObject.exportObject(client2server, 1099);
+                Naming.rebind("rmi://" + ip + ":1099/" + RMI_Services.client2server.toString(), client2server);
+                n++;
+            } catch (RemoteException | MalformedURLException ex) {
+            }
+        }
+        System.clearProperty("java.rmi.server.hostname");
+        if (n == 0) {
+            throw new MalformedURLException("no acceptible ip");
+        }
+        //##################################################################
+        logger.log(Level.INFO, "rmi server started");
+    }
+
+    static void destruct() {
+
+    }
+
+    @Override
+    public void playerJoined(String connection, long gameID) throws RemoteException {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public void playerLeft(Player player, long gameID) throws RemoteException {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public void gameFull(long gameID) throws RemoteException {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public void gameEnded(long gameID) throws RemoteException {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    private static RMI_Server2Client generateStubTo(String playerConnection) {
+
+        logger.log(Level.INFO, "generating stub");
+        RMI_Server2Client proxy = null;
+        while (true) {
+            logger.log(Level.INFO, "trying to connect to {0}", playerConnection);
+            try {
+                proxy = (RMI_Server2Client) Naming.lookup("rmi://" + playerConnection + "/" + RMI_Services.server2client.toString());
+                logger.log(Level.INFO, "connected to {0}", playerConnection);
+                break;
+            } catch (NotBoundException | MalformedURLException | RemoteException ex) {
+                logger.log(Level.INFO, "can not connect to {0} at this time", playerConnection);
+                logger.log(Level.FINEST, "detailed:", ex);
+            }
+            //client offline
+            logger.log(Level.SEVERE, "no connection to client -> retrying later", new RemoteException("client offline"));
+            try {
+                Thread.sleep((30 / 1) * 1000);// timeout 30s
+            } catch (InterruptedException ex3) {
+                //wakeUP
+            }
+        }
+        return proxy;
+    }
+}

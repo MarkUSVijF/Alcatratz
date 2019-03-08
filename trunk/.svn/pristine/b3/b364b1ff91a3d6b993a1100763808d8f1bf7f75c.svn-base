@@ -1,0 +1,23 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.server.common;
+
+import net.technikumwien.bic4b18_01.common.assist.RUID;
+
+/**
+ *
+ * @author Florian
+ */
+public class Data {
+    
+    private static final RUID serverID =RUID.new_9();
+    
+    //##########################################################################
+    //server RUID
+    public static RUID getServerID(){
+        return serverID;
+    }
+}

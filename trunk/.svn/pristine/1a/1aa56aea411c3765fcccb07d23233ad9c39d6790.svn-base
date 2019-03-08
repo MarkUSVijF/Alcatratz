@@ -1,0 +1,93 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.common.rmi;
+
+import net.technikumwien.bic4b18_01.common.exception.GameException;
+import java.io.Serializable;
+import at.falb.games.alcatraz.api.Player;
+import java.util.ArrayList;
+
+/**
+ *
+ * @author Florian
+ */
+public class GameInfo implements Serializable {
+
+    private final long gameID;
+    private final ArrayList<Player> players;
+    private final int gameSize;
+
+    public GameInfo(int gameID, int gameSize) {
+        this.gameID = gameID;
+        this.players = new ArrayList();
+        this.gameSize = gameSize;
+    }
+
+    public GameInfo(GameInfo original) { //copy constructor
+        this.gameID = original.getGameID();
+        this.gameSize = original.getGameSize();
+        this.players = original.getPlayers();
+    }
+
+    public Player addPlayer(String playerName) throws GameException {
+        final Player newPlayer;
+        int index = 0;
+        synchronized (this.players) {
+            for (Player player : players) {
+                if (player.getId() == index) {
+                    index++;
+                }
+                if (player.getName() == null ? playerName == null : player.getName().equals(playerName)) {
+                    throw new GameException("playerName '" + playerName + "' already in use");
+                }
+            }
+            if (index >= this.getGameSize()) {
+                throw new GameException("game already full");
+            }
+            newPlayer = new Player(index);
+            newPlayer.setName(playerName);
+            this.players.add(index, newPlayer);
+        }
+        return newPlayer; //final
+    }
+
+    public void removePlayer(int playerID) throws GameException {
+        int index = 0;
+        synchronized (this.players) {
+            for (Player player : players) {
+                if (player.getId() == playerID) {
+                    break;
+                }
+                index++;
+            }
+            if (index >= this.getNrJoined()) {
+                //already removed
+                return;
+            }
+            this.players.remove(index);
+        }
+    }
+
+    public ArrayList<Player> getPlayers() {
+        synchronized (this.players) {
+            return new ArrayList(this.players); //copy
+        }
+    }
+
+    public long getGameID() {
+        return gameID; //final
+    }
+
+    public int getNrJoined() {
+        synchronized (this.players) {
+            return this.players.size(); //simple
+        }
+    }
+
+    public int getGameSize() {
+        return this.gameSize; //final
+    }
+}

@@ -1,0 +1,61 @@
+package net.technikumwien.bic4b18_01.client.local;
+
+import java.io.IOException;
+import java.util.Random;
+import java.util.Set;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import net.technikumwien.bic4b18_01.client.connectionMW.ConnectionOUT;
+import net.technikumwien.bic4b18_01.client.connectionMW.IClient2ClientMW;
+import net.technikumwien.bic4b18_01.client.connectionMW.IClient2ServerMW;
+import net.technikumwien.bic4b18_01.common.assist.RUID;
+import net.technikumwien.bic4b18_01.common.assist.TraceHelper;
+import net.technikumwien.bic4b18_01.common.exception.ConnectionException;
+import net.technikumwien.bic4b18_01.common.settings.LoggerSettings;
+import static net.technikumwien.bic4b18_01.common.assist.TODO.MORE;
+import net.technikumwien.bic4b18_01.common.exception.GameException;
+import net.technikumwien.bic4b18_01.common.rmi.GameInfo;
+
+public class ClientApplication {
+
+    /**
+     *
+     * @param args
+     */
+    private static final Logger logger = Logger.getLogger(TraceHelper.getClassName());
+
+    public static void main(String[] args) {
+
+        try {
+            LoggerSettings.initLogging();
+        } catch (IOException ex) {
+            logger.log(Level.SEVERE, "logger could not be started", ex);
+        }
+        ConnectionOUT.construct(); //creates a connection 2 the lobby server
+
+        //Hier wird auf die Implementierung von IClient2ServerMW zugegriffen
+        IClient2ServerMW registerConnection = ConnectionOUT.getToServer();
+        try {
+            registerConnection.getGames();
+            GameInfo game = registerConnection.hostGame((new Random()).nextInt(3)+2, RUID.new_9().toString());
+            
+            Set<GameInfo> games = registerConnection.getGames();
+            if (game != null) {
+                System.out.println("\nPlayer (Name:" +game.getPlayers().get(0).getName()+ ") is hosting now a game!\n");
+            }
+        } catch (ConnectionException ex) {
+            logger.log(Level.SEVERE, "MW not constructed yet", ex);
+        } catch (GameException ex) {
+            Logger.getLogger(ClientApplication.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        /**
+         * more stuff TODO
+         */
+        MORE.todo(ClientApplication.class.getName()); // like GUI an such
+
+        IClient2ClientMW gameConnection = ConnectionOUT.getToClient();
+
+        //kommentier die untere zeile aus um spiele nach dem laufen im server zu lassen
+       // ConnectionOUT.destruct();
+    }
+}

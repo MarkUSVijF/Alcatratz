@@ -1,0 +1,70 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.server.spread;
+
+import java.io.Serializable;
+import java.util.AbstractMap;
+import java.util.List;
+import java.util.Map;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import net.technikumwien.bic4b18_01.common.assist.TraceHelper;
+import net.technikumwien.bic4b18_01.server.common.Data;
+import net.technikumwien.bic4b18_01.server.connectionMW.ToSpreadGroup;
+import spread.SpreadException;
+import spread.SpreadMessage;
+
+/**
+ *
+ * @author Florian
+ */
+public class AsynchronSpreadMessage {
+
+    private static final Logger logger = Logger.getLogger(TraceHelper.getClassName());
+    private static final String GROUPNAME = "asynchronSMGroup";
+
+    public static void deliver(SpreadMessage sm) throws SpreadException {
+
+        sm.setSafe();
+        sm.addGroup(GROUPNAME);
+        ToSpreadGroup.connection.multicast(sm);
+    }
+
+    public static String getGroupName() {
+        return GROUPNAME;
+    }
+
+    public static void process(SpreadMessage sm) throws SpreadException {
+        switch (sm.getType()) {
+            case 0:
+                logger.log(Level.INFO, "SPREAD -> received testMSG from {0} in {1}. [Payload equals testMSG = {2}]", new Object[]{sm.getSender().toString(), sm.getGroups()[0].toString(), "testMSG".equals((String) (sm.getObject()))});
+                SpreadMessage msg = new SpreadMessage();
+                msg.setType((short) 20);
+                msg.setSafe();
+                PrivatSpreadMessage.deliverTo(msg, sm.getSender());
+                break;
+            case 10:
+                processPlayerJoinedCallbackMessage(sm);
+                break;
+            default:
+                logger.log(Level.INFO, "SPREAD -> #{0} received unknown asynchron message from {1}.", new Object[]{Data.getServerID().toString(), sm.getSender().toString()});
+        }
+    }
+
+    private static void processPlayerJoinedCallbackMessage(SpreadMessage sm) throws SpreadException {
+        List digest = sm.getDigest();
+        String clientConnection = (String) digest.get(0);
+        int gameID = (int) digest.get(1);
+        logger.log(Level.INFO, "SPREAD -> client {0} joined to game {1}.", new Object[]{clientConnection, gameID});
+        //
+
+        Map.Entry<String, List<Serializable>> cbm = new AbstractMap.SimpleImmutableEntry("playerJoined", digest);
+
+        if (sm.getSender().toString().equals(Data.getServerID())) {
+
+        }
+    }
+}

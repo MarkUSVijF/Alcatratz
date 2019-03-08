@@ -1,0 +1,7 @@
+@call set-env.bat
+if %ERRORLEVEL% NEQ 0 (
+  exit /b %ERRORLEVEL%
+)
+
+call java net.technikumwien.bic4b18_01.server.local.ServerApplication
+pause

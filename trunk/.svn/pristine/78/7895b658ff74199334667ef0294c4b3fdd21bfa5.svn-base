@@ -1,0 +1,50 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package apllicationMW;
+
+import at.falb.games.alcatraz.api.MoveListener;
+import at.falb.games.alcatraz.api.Player;
+import at.falb.games.alcatraz.api.Prisoner;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import net.technikumwien.bic4b18_01.common.assist.TraceHelper;
+import net.technikumwien.bic4b18_01.common.exception.GameException;
+import net.technikumwien.bic4b18_01.common.rmi.MoveInfo;
+
+/**
+ *
+ * @author Florian
+ */
+public class GameListener implements MoveListener{
+    private static final Logger logger = Logger.getLogger(TraceHelper.getClassName());
+
+    @Override
+    public void moveDone(Player player, Prisoner prisoner, int rowOrCol, int row, int col) {
+        logger.log(Level.SEVERE, "{0} -> GameListener enter moveDone", new Object[]{Thread.currentThread().getName()});
+        GameConnection.sendMove(new MoveInfo(GameConnection.getMoveID()+1, player, prisoner, rowOrCol, row, col));
+        logger.log(Level.SEVERE, "{0} -> GameListener leave moveDone", new Object[]{Thread.currentThread().getName()});
+    }
+
+    @Override
+    public void gameWon(Player player) {
+        logger.log(Level.SEVERE, "{0} -> GameListener enter gameWon", new Object[]{Thread.currentThread().getName()});
+        if(player.getId()!=GameConnection.myPlayerID){
+            return;
+        }
+        logger.log(Level.SEVERE, "{0} -> GameListener enter gameWon1", new Object[]{Thread.currentThread().getName()});
+        //if (GameConnection.stopGame()) {
+        logger.log(Level.SEVERE, "{0} -> GameListener enter gameWon2", new Object[]{Thread.currentThread().getName()});
+            try {
+                ToServer.endGame(GameConnection.getLastMoves());
+        logger.log(Level.SEVERE, "{0} -> GameListener enter gameWon3", new Object[]{Thread.currentThread().getName()});
+            } catch (GameException ex) {
+                Logger.getLogger(GameListener.class.getName()).log(Level.SEVERE, null, ex);
+            }
+        //}
+        logger.log(Level.SEVERE, "{0} -> GameListener leave gameWon", new Object[]{Thread.currentThread().getName()});
+    }
+    
+}

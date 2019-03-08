@@ -1,0 +1,265 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package apllicationMW;
+
+import at.falb.games.alcatraz.api.Alcatraz;
+import at.falb.games.alcatraz.api.Player;
+import java.net.MalformedURLException;
+import java.rmi.Naming;
+import java.rmi.NotBoundException;
+import java.rmi.RemoteException;
+import java.rmi.server.UnicastRemoteObject;
+import java.util.ArrayDeque;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import javax.swing.JPanel;
+import net.technikumwien.bic4b18_01.client.rmi.Client2Client;
+import net.technikumwien.bic4b18_01.common.assist.TraceHelper;
+import net.technikumwien.bic4b18_01.common.rmi.GameInfo;
+import net.technikumwien.bic4b18_01.common.rmi.MoveInfo;
+import net.technikumwien.bic4b18_01.common.rmi.RMI_Client2Client;
+import static net.technikumwien.bic4b18_01.common.rmi.RMI_Services.client2client;
+
+/**
+ * package access only
+ *
+ * @author Florian
+ */
+public class GameConnection {
+
+    /**
+     *
+     */
+    private static final Logger logger = Logger.getLogger(TraceHelper.getClassName());
+    
+    public static Alcatraz gameInstance = new Alcatraz();
+    public static int myPlayerID=-1;
+    private static final Set<String> clientConnections = new HashSet();
+    private static final Thread heart;
+    private static boolean gameStarted = false;// == heart.isAlive();
+    private static final ArrayDeque<MoveInfo> lastMoves = new ArrayDeque();
+    private static int lastMoveID = 0;
+    private static final ReadWriteLock lock = new ReentrantReadWriteLock();
+    
+    
+    static{
+        heart = new Thread(new Runnable() {
+            @Override
+            public void run() {
+            lock.readLock().lock();
+            try {
+                    if (gameStarted) {
+                        for (String connection : clientConnections) {
+                            try {
+                                RMI_Client2Client outgoing = (RMI_Client2Client) Naming.lookup("rmi://" + connection + "/AlcatrazGameService");
+                                outgoing.sendHeartbeat(Middleware.connection, lastMoveID);
+                            } catch (MalformedURLException ex) {
+                                logger.log(Level.SEVERE, "CRITICAL", ex);
+                            } catch (NotBoundException | RemoteException ex) {
+                                logger.log(Level.INFO, "{0} -> {1} currently not reachable.", new Object[]{Thread.currentThread().getName(), connection});
+                            }
+                        }
+                    }
+                } finally {
+                    lock.readLock().unlock();
+                }
+                try {
+                Thread.sleep(60000);
+            } catch (InterruptedException ex) {
+                Logger.getLogger(GameConnection.class.getName()).log(Level.SEVERE, null, ex);
+            }
+            }
+        });
+        heart.start();
+    }
+    
+    public static void startGame(GameInfo gameInfo, Set<String> playerConnections, int playerID){
+        lock.writeLock().lock();
+        try {
+            gameInstance.disposeWindow();
+            gameInstance = new Alcatraz();
+            clientConnections.clear();
+            lastMoves.clear();
+            lastMoveID = 0;
+            
+            gameInstance.init(gameInfo.getGameSize(), playerID);
+            for(Player p:gameInfo.getPlayers()){
+                gameInstance.getPlayer(p.getId()).setName(p.getName());
+            }
+            gameInstance.addMoveListener(new GameListener());
+            //gameInstance.showWindow();
+            gameInstance.start();
+            clientConnections.addAll(playerConnections);
+            myPlayerID=playerID;
+            gameStarted = true;// == heart.isAlive();
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    public static void sendMove(MoveInfo mv) {
+        lock.writeLock().lock();
+        try {
+            for (String connection : clientConnections) {
+                if(connection.equals(Middleware.connection)){
+                    continue;
+                }
+                try {
+                    RMI_Client2Client outgoing = (RMI_Client2Client) Naming.lookup("rmi://" + connection + "/AlcatrazGameService");
+                    outgoing.sendMove(Middleware.connection, mv);
+                } catch (MalformedURLException ex) {
+                    logger.log(Level.SEVERE, "CRITICAL", ex);
+                } catch (NotBoundException | RemoteException ex) {
+                    logger.log(Level.INFO, "{0} -> {1} currently not reachable.", new Object[]{Thread.currentThread().getName(), connection});
+                }
+            }
+            lastMoves.push(mv);
+            if(lastMoves.size()>clientConnections.size()){
+                lastMoves.poll();
+            }
+            lastMoveID=mv.moveID;
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    public static void addMove(String sender, MoveInfo move) {
+        lock.writeLock().lock();
+        try {
+            if (move.moveID <= lastMoveID) {
+                return;
+            }
+            if (move.moveID - lastMoveID > 1) {
+                getUpdateFrom(sender);
+                return;
+            }
+            doMove(move);
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    private static void getUpdateFrom(String client) {
+        ArrayDeque<MoveInfo> update = new ArrayDeque();
+        try {
+            RMI_Client2Client outgoing = (RMI_Client2Client) Naming.lookup("rmi://" + client + "/AlcatrazGameService");
+            update = outgoing.getUpdate();
+        } catch (MalformedURLException ex) {
+            logger.log(Level.SEVERE, "CRITICAL", ex);
+        } catch (NotBoundException | RemoteException ex) {
+            logger.log(Level.INFO, "{0} -> {1} currently not reachable.", new Object[]{Thread.currentThread().getName(), client});
+        }
+        lock.writeLock().lock();
+        try {
+            while(!update.isEmpty()){
+                MoveInfo move=update.poll();
+                if(move.moveID<=lastMoveID){
+                    continue;
+                }
+                doMove(move);
+            }
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+    
+    private static void doMove(MoveInfo move) {
+        lock.writeLock().lock();
+        if(!gameStarted){
+            return;
+        }
+        try {
+            gameInstance.doMove(move.player, move.prisoner, move.rowOrCol, move.row, move.col);
+            lastMoveID=move.moveID;
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+    
+    public static void doMoves(ArrayDeque<MoveInfo> lastMoves){
+        
+        int i=-1;
+        lock.readLock().lock();
+        try {
+            if (!gameStarted) {
+                return;
+            }
+            i = lastMoveID;
+        } finally {
+            lock.readLock().unlock();
+        }
+        while (!lastMoves.isEmpty()) {
+            MoveInfo move = lastMoves.poll();
+            if (move.moveID <= i) {
+                continue;
+            }
+            doMove(move);
+        }
+        stopGame();
+    }
+
+    public static ArrayDeque<MoveInfo> getLastMoves(){
+        ArrayDeque<MoveInfo> result = new ArrayDeque();
+        lock.readLock().lock();
+        try {
+            result.addAll(lastMoves);
+        } finally {
+            lock.readLock().unlock();
+        }
+        return result;
+    }
+    
+    public static boolean stopGame(){
+        
+        lock.writeLock().lock();
+        try {
+            gameInstance= new Alcatraz();
+            gameStarted=false;
+            myPlayerID=-1;
+        } finally {
+            lock.writeLock().unlock();
+        }
+        return true;
+    }
+    
+    public static int getMoveID(){
+        lock.readLock().lock();
+        try {
+            return lastMoveID;
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    //##########################################################################
+    static void construct(String connection) throws RemoteException, MalformedURLException {
+
+        // ### ToClient.Data.createInstance(); at game start
+        //bind RMI
+        String ip = connection.substring(0, connection.indexOf(':'));
+        int port = Integer.valueOf(connection.substring(connection.indexOf(':') + 1));
+        System.setProperty("java.rmi.server.hostname", ip);
+        RMI_Client2Client client2clientSkeleton = new Client2Client();
+        UnicastRemoteObject.exportObject(client2clientSkeleton, port);
+        Naming.rebind("rmi://" + connection + "/" + client2client.toString(), client2clientSkeleton);
+        System.clearProperty("java.rmi.server.hostname");
+        logger.log(Level.INFO, "{0} -> {1} bound to {2}", new Object[]{Thread.currentThread().getName(), client2client, "" + port});
+
+    }
+
+    static void destruct(String connection) {
+
+        try {
+            Naming.unbind("rmi://" + connection + "/" + client2client.toString());
+        } catch (RemoteException | NotBoundException | MalformedURLException ex) {
+            logger.log(Level.WARNING, "{0} -> could not unbind rmi service {1}", new Object[]{Thread.currentThread().getName(), client2client.toString()});
+        }
+    }
+}

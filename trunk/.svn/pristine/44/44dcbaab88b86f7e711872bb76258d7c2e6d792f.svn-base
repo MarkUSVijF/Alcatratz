@@ -1,0 +1,92 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.common.assist;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.InterfaceAddress;
+import java.net.NetworkInterface;
+import java.net.SocketException;
+import java.util.Enumeration;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
+/**
+ *
+ * @author Florian
+ */
+public class LocalNetwork {
+    private static final Logger logger = Logger.getLogger(LocalNetwork.class.getName());
+
+    public static Set<String> getIPv4() {
+        final Set<String> result = new HashSet();
+
+        Enumeration<NetworkInterface> networks = null;
+        try {
+            networks = NetworkInterface.getNetworkInterfaces();
+        } catch (SocketException ex) {
+            logger.log(Level.SEVERE, null, ex);
+        }
+        if (networks == null) {
+            return result;
+        }
+        while (networks.hasMoreElements()) {
+            NetworkInterface network = networks.nextElement();
+            List<InterfaceAddress> addresses = network.getInterfaceAddresses();
+            for (InterfaceAddress address : addresses) {
+                switch (address.getAddress().getAddress().length) {
+                    case 4: //IPv4
+                        break;
+                    case 16: //IPv6
+                    default: //something else
+                        continue;
+                }
+                switch (address.getAddress().getHostAddress()) {
+                    case "127.0.0.1":
+                    default:
+                        break;
+                }
+                logger.log(Level.INFO, "IPv4: {0}", address.toString());
+                result.add(address.getAddress().getHostAddress());
+            }
+        }
+        if(!result.isEmpty() || !System.getProperty("os.name").contains("win")) return result;
+
+        //######################################################################
+        // old code below as back up
+        // for the time java.net.NetworkInterface does not work
+        // shouldn't be needed
+        InputStream ipconfig = null;
+        try {
+            ipconfig = Runtime.getRuntime().exec("ipconfig").getInputStream();
+            int ch;
+            String cmd_OUT = "";
+            while ((ch = ipconfig.read()) != -1) {
+                cmd_OUT += ((char) ch);
+            }
+            for (String line : cmd_OUT.split("\n")) {
+                if (line.contains("IPv4")) {
+                    result.add(line.substring(line.lastIndexOf(':') + 2, line.lastIndexOf('\r')));
+                }
+            }
+            return result;
+        } catch (IOException ex) {
+                logger.log(Level.SEVERE, "IOException", ex);
+        } finally {
+            try {
+                if (ipconfig != null) {
+                    ipconfig.close();
+                }
+            } catch (IOException ex) {
+                logger.log(Level.SEVERE, "IOException", ex);
+            }
+        }
+        return new HashSet();
+    }
+}

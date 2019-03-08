@@ -1,0 +1,73 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.client.rmi;
+
+import apllicationMW.GameConnection;
+import at.falb.games.alcatraz.api.Player;
+import java.rmi.RemoteException;
+import java.util.ArrayDeque;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import javax.swing.JPanel;
+import net.technikumwien.bic4b18_01.client.local.GUI;
+import net.technikumwien.bic4b18_01.common.assist.TraceHelper;
+import net.technikumwien.bic4b18_01.common.rmi.GameInfo;
+import net.technikumwien.bic4b18_01.common.rmi.MoveInfo;
+import net.technikumwien.bic4b18_01.common.rmi.RMI_Server2Client;
+
+/**
+ *
+ * @author Florian
+ */
+public class Server2Client implements RMI_Server2Client {
+
+    private static final Logger logger = Logger.getLogger(TraceHelper.getClassName());
+    private final GUI gui;
+
+    public Server2Client(GUI gui){
+        this.gui=gui;
+    }
+    public Server2Client(){
+        this.gui=null;
+    }
+    @Override
+    public void playerChange(GameInfo game) throws RemoteException {
+       logger.log(Level.INFO, "{0} -> got playerChange start.", new Object[]{Thread.currentThread().getName(), TraceHelper.getClassName(), TraceHelper.getMethodName()});
+        if(gui!=null){
+            
+            gui.refreshGame(game);
+        } else {
+            logger.log(Level.SEVERE, "{0} -> {1}.{2} - Not supported yet.", new Object[]{Thread.currentThread().getName(), TraceHelper.getClassName(), TraceHelper.getMethodName()});
+        }
+    }
+
+    @Override
+    public void gameStart(GameInfo game, Set<String> playerConnections, int playerID) throws RemoteException {
+        logger.log(Level.INFO, "{0} -> got game start.", new Object[]{Thread.currentThread().getName(), TraceHelper.getClassName(), TraceHelper.getMethodName()});
+        
+        GameConnection.startGame(game, playerConnections, playerID);
+        if(gui!=null){
+            gui.startGame(game);
+        } else {
+            logger.log(Level.SEVERE, "{0} -> {1}.{2} - Not supported yet.", new Object[]{Thread.currentThread().getName(), TraceHelper.getClassName(), TraceHelper.getMethodName()});
+        }
+    }
+
+    @Override
+    public void gameEnd(ArrayDeque<MoveInfo> lastMoves) throws RemoteException {
+        logger.log(Level.SEVERE, "{0} -> GameListener enter gameEnd", new Object[]{Thread.currentThread().getName()});
+        GameConnection.doMoves(lastMoves);
+        if(gui!=null){
+            logger.log(Level.SEVERE, "{0} -> GameListener gui change", new Object[]{Thread.currentThread().getName()});
+            gui.finishGame();
+        } else {
+            logger.log(Level.SEVERE, "{0} -> {1}.{2} - Not supported yet.", new Object[]{Thread.currentThread().getName(), TraceHelper.getClassName(), TraceHelper.getMethodName()});
+        }
+        logger.log(Level.SEVERE, "{0} -> GameListener leave gameEnd", new Object[]{Thread.currentThread().getName()});
+    }
+}

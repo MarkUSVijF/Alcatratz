@@ -1,0 +1,135 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.server.common;
+
+import java.io.Serializable;
+import java.lang.invoke.WrongMethodTypeException;
+import java.rmi.RemoteException;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import net.technikumwien.bic4b18_01.common.exception.ConnectionException;
+import net.technikumwien.bic4b18_01.common.exception.GameException;
+
+/**
+ * collection of server data
+ * @author Florian
+ */
+public class ClientRequests {
+    private static final Logger logger = Logger.getLogger(ClientRequests.class.getName());
+    private static final Map<String, Response> client_responses = new HashMap();
+    private static final Map<Long, Thread> sleeping_threads = new HashMap();
+    
+    //##########################################################################
+    //client requests:
+    private static void addResponse(String clientConnection, Response response){
+        
+        synchronized (client_responses) {
+            client_responses.put(clientConnection, response);
+        }
+    }
+    //##########################################################################
+    //thread management
+    private static void sleepThread() throws InterruptedException{
+        
+        //Die ID des aktuellen Threads wird gespeichert
+        //Dies wird benötigt damit der Thread des Spread-Listeners uns wieder aufwecken kann (Scheduling)
+        synchronized (ClientRequests.sleeping_threads) {
+            ClientRequests.sleeping_threads.put(Thread.currentThread().getId(), Thread.currentThread());
+        }
+        //Der Thread wird für 5 Minuten angehalten
+        Thread.sleep(300000);
+    }
+    private static void wakeupThread(long threadID, String sender){
+        
+        if (sender.contains(Data.getServerID().toString())) {
+            Thread sleepingThread;
+            synchronized (ClientRequests.sleeping_threads) {
+                sleepingThread = ClientRequests.sleeping_threads.remove(threadID);
+            }
+            if (sleepingThread != null && sleepingThread.isAlive()) {
+                sleepingThread.interrupt();
+            }
+        }
+    }
+    //##########################################################################
+    
+    /**
+     * RMI side
+     * @param clientConnection
+     * @param requestNr
+     * @param responseType
+     * @param requestMethod
+     * @return
+     * @throws GameException 
+     * @throws NoSuchElementException 
+     * @throws WrongMethodTypeException 
+     */
+    public static Serializable getResponse(String clientConnection, int requestNr, String responseType, String requestMethod) throws GameException, NoSuchElementException, WrongMethodTypeException{
+        Response response;
+        synchronized (client_responses) {
+            response = client_responses.get(clientConnection);
+        }
+        if (response != null && response.reqID == requestNr) {
+            // add more throw clauses
+            if (requestMethod!=null && !requestMethod.equals(response.request)){
+                throw new WrongMethodTypeException("request method is not as expected.");
+            }
+            if ("GameException".equals(response.type)) {
+                throw (GameException) response.value;
+            }
+            return response.value; // may be null!!!!
+        }
+        throw new NoSuchElementException();
+    }
+    
+    /**
+     * RMI side
+     * @param clientConnection
+     * @param requestNr
+     * @param expectedType
+     * @param request
+     * @return
+     * @throws GameException
+     * @throws ConnectionException
+     * @throws RemoteException 
+     */
+    public static Serializable awaitResponse(String clientConnection, int requestNr, String expectedType, String request) throws GameException, ConnectionException, RemoteException{
+        
+        //Die Anfrage wird an Spread weitergeleitet
+        try {
+            //Der Thread wird für 5 Minuten angehalten
+            //wir wollen geweckt werden
+            sleepThread();
+        } catch (InterruptedException wakeup) {
+            try {
+                // throws GameException, ConnectionException others are cought
+                return ClientRequests.getResponse(clientConnection, requestNr, expectedType, request); 
+            } catch (NoSuchElementException ex) {
+                logger.log(Level.WARNING, "Request for {0} with NR {1} could not be finished.", new Object[]{clientConnection, requestNr});
+            } catch (WrongMethodTypeException ex) {
+                logger.log(Level.WARNING, "Request for {0} with NR {1} has unexpected Type", new Object[]{clientConnection, requestNr});
+            }
+            throw new RemoteException("request could not be finished.");
+        }
+        throw new RemoteException("timed out after 5 minutes");
+    }
+    
+    /**
+     * Spread side
+     * @param threadID
+     * @param connection
+     * @param sender
+     * @param response
+     */
+    public static void returnResponse(long threadID, String connection, String sender, Response response) {
+
+        ClientRequests.addResponse(connection, response);
+        ClientRequests.wakeupThread(threadID, sender);
+    }
+}

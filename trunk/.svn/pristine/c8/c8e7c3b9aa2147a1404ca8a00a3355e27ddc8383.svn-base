@@ -1,0 +1,169 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.server.spread;
+
+import net.technikumwien.bic4b18_01.server.connectionMW.Spread;
+import java.io.Serializable;
+import java.lang.invoke.WrongMethodTypeException;
+import java.util.AbstractMap;
+import java.util.ArrayDeque;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.Set;
+import java.util.UUID;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import net.technikumwien.bic4b18_01.common.assist.TraceHelper;
+import net.technikumwien.bic4b18_01.common.exception.ConnectionException;
+import net.technikumwien.bic4b18_01.common.exception.GameException;
+import net.technikumwien.bic4b18_01.common.rmi.GameInfo;
+import net.technikumwien.bic4b18_01.common.rmi.MoveInfo;
+import net.technikumwien.bic4b18_01.server.common.ClientRequests;
+import net.technikumwien.bic4b18_01.server.common.Game;
+import net.technikumwien.bic4b18_01.server.common.GameList;
+import net.technikumwien.bic4b18_01.server.common.Response;
+import net.technikumwien.bic4b18_01.server.rmi.CallBackManager;
+import spread.SpreadException;
+import spread.SpreadMessage;
+
+/**
+ *
+ * @author Florian
+ */
+public class AsynchronSpreadMessage {
+
+    private static final Logger logger = Logger.getLogger(TraceHelper.getClassName());
+    private static final String GROUPNAME = "asynchronSMGroup";
+
+    private static void deliver(SpreadMessage sm) throws SpreadException {
+
+        sm.setSafe();
+        sm.addGroup(GROUPNAME);
+        Spread.connection.multicast(sm);
+    }
+
+    public static String getGroupName() {
+        return GROUPNAME;
+    }
+
+    public static void process(SpreadMessage sm) throws SpreadException {
+        switch (sm.getType()) {
+            case 1:
+                processPlayerChangeMessage(sm);
+                break;
+            case 2:
+                processGameStartMessage(sm);
+                break;
+            case 3:
+                processGameEndMessage(sm);
+                break;
+            case 9:
+                processForceLeaveGameMessage(sm);
+                break;
+            default:
+                logger.log(Level.INFO, "{0} -> #{1} received unknown asynchron message from {2}.", new Object[]{Thread.currentThread().getName(), Spread.getServerID().toString(), sm.getSender().toString()});
+        }
+    }
+    
+    //##########################################################################
+    public static void sendPlayerChange(String server, HashSet<String> recipients, Game game) {
+        SpreadMessage message = new SpreadMessage();
+        message.setType((short) 1);
+        try {
+            message.digest(server);
+            message.digest(recipients);
+            message.digest(game);
+            deliver(message);
+        } catch (SpreadException ex) {
+            logger.log(Level.SEVERE, null, ex);
+        }
+    }
+
+    public static void sendGameStart(String server, HashSet<String> recipients, Game game) {
+        SpreadMessage message = new SpreadMessage();
+        message.setType((short) 2);
+        try {
+            message.digest(server);
+            message.digest(recipients);
+            message.digest(game);
+            deliver(message);
+        } catch (SpreadException ex) {
+            logger.log(Level.SEVERE, null, ex);
+        }
+    }
+
+    public static void sendGameEnd(String server, HashSet<String> recipients, Game game, ArrayDeque<MoveInfo> moves) {
+        SpreadMessage message = new SpreadMessage();
+        message.setType((short) 3);
+        try {
+            message.digest(server);
+            message.digest(recipients);
+            message.digest(game);
+            message.digest(moves);
+            deliver(message);
+        } catch (SpreadException ex) {
+            logger.log(Level.SEVERE, null, ex);
+        }
+    }
+
+    public static void sendForceLeaveGame(String connection, int gameID) {
+        SpreadMessage message = new SpreadMessage();
+        message.setType((short) 9);
+        try {
+            message.digest(connection);
+            message.digest(gameID);
+            deliver(message);
+        } catch (SpreadException ex) {
+            logger.log(Level.SEVERE, null, ex);
+        }
+    }
+
+    //##########################################################################
+    private static void processPlayerChangeMessage(SpreadMessage sm) throws SpreadException {
+        List digest = sm.getDigest();
+        String server = (String) digest.get(0);
+        Set<String> recipients = (HashSet<String>) digest.get(1);
+        Game game = (Game) digest.get(2);
+        
+        CallBackManager.playerChange(server, recipients, game);
+    }
+
+    private static void processGameStartMessage(SpreadMessage sm) throws SpreadException {
+        List digest = sm.getDigest();
+        String server = (String) digest.get(0);
+        Set<String> recipients = (HashSet<String>) digest.get(1);
+        Game game = (Game) digest.get(2);
+        
+        CallBackManager.gameStart(server, recipients, game);
+    }
+
+    private static void processGameEndMessage(SpreadMessage sm) throws SpreadException {
+        List digest = sm.getDigest();
+        String server = (String) digest.get(0);
+        Set<String> recipients = (HashSet<String>) digest.get(1);
+        Game game = (Game) digest.get(2);
+        ArrayDeque<MoveInfo> moves = (ArrayDeque<MoveInfo>) digest.get(3);
+        
+        CallBackManager.gameEnd(server, recipients, game, moves);
+    }
+
+    private static void processForceLeaveGameMessage(SpreadMessage sm) throws SpreadException {
+        //only in closed games
+        List digest = sm.getDigest();
+        String clientConnection = (String) digest.get(0);
+        int gameID = (int) digest.get(1);
+        try {
+            Game game = GameList.removePlayerFromGame(clientConnection,gameID);
+            if(game!=null){
+                logger.log(Level.INFO, "{0} -> force leave {1} from {2}.", new Object[]{Thread.currentThread().getName(), clientConnection, game.getGameID()});
+            }
+        } catch (GameException ex) {
+            logger.log(Level.SEVERE, "{0} -> player in active game. [HOW?]", Thread.currentThread().getName());
+        }
+    }
+}

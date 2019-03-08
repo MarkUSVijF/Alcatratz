@@ -1,0 +1,128 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.server.applicationMW;
+
+import java.io.File;
+import java.io.IOException;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import net.technikumwien.bic4b18_01.common.assist.RUID;
+import net.technikumwien.bic4b18_01.common.assist.TraceHelper;
+import static net.technikumwien.bic4b18_01.common.assist.TraceHelper.getTrunk;
+import net.technikumwien.bic4b18_01.server.spread.AsynchronSpreadMessage;
+import net.technikumwien.bic4b18_01.server.spread.SpreadListener;
+import net.technikumwien.bic4b18_01.server.spread.SynchronSpreadMessage;
+import spread.SpreadConnection;
+import spread.SpreadException;
+import spread.SpreadGroup;
+import spread.SpreadMessage;
+
+/**
+ *
+ * @author Florian
+ */
+public class Spread {
+
+    private static final Logger logger = Logger.getLogger(TraceHelper.getClassName());
+    private static final RUID serverID = RUID.new_9();
+    public static SpreadConnection connection = null;
+
+    //##########################################################################
+    //server RUID
+    public static RUID getServerID() {
+        return serverID;
+    }
+
+    //##########################################################################
+    static void construct() throws SpreadException {
+
+        File trunk = getTrunk();
+        List<String> daemonIPs = new ArrayList();
+
+        daemonIPs.add("127.0.0.1");
+        try {
+            List<String> lines = Files.readAllLines(Paths.get(trunk.getPath() + "\\spread\\src\\main\\java\\net\\technikumwien\\bic4b18_01\\spread\\local\\daemon.ip"));
+            for (String line : lines) {
+                if (!("".equals(line))) {
+                    daemonIPs.add(line);
+                }
+            }
+            // cleansing daemon.ip
+            logger.log(Level.INFO, "{0} -> daemon.ip successfully read", Thread.currentThread().getName());
+        } catch (IOException ex) {
+            logger.log(Level.SEVERE, "{0} -> daemon.ip unreadable", Thread.currentThread().getName());
+        }
+
+        logger.log(Level.INFO, "{0} -> creating serverRUID", Thread.currentThread().getName());
+
+        logger.log(Level.INFO, "{0} -> joining spread groups with: #{1}", new Object[]{Thread.currentThread().getName(), serverID});
+        InetAddress ia = null;
+        for (String ip : daemonIPs) {
+            SpreadGroup group;
+            try {
+                ia = InetAddress.getByName(ip);
+                logger.log(Level.INFO, "{0} -> trying deamon at {1}", new Object[]{Thread.currentThread().getName(), ip});
+
+                connection = new SpreadConnection();
+                connection.connect(ia, 9101, serverID.toString(), false, true);
+                //low priority == client requests
+                group = new SpreadGroup();
+                group.join(connection, SynchronSpreadMessage.getGroupName());
+                logger.log(Level.INFO, "{0} -> spread group {1} connected with #{2}", new Object[]{Thread.currentThread().getName(), SynchronSpreadMessage.getGroupName(), serverID});
+
+                //high priority == server requests
+                group = new SpreadGroup();
+                group.join(connection, AsynchronSpreadMessage.getGroupName());
+                logger.log(Level.INFO, "{0} -> spread group {1} connected with #{2}", new Object[]{Thread.currentThread().getName(), AsynchronSpreadMessage.getGroupName(), serverID});
+
+                break;
+            } catch (UnknownHostException | SpreadException ex) {
+                logger.log(Level.INFO, "{0} -> no connectioncould be established to {1}", new Object[]{Thread.currentThread().getName(), ip});
+                if (connection != null) {
+                    try {
+                        connection.disconnect();
+                    } catch (SpreadException ex1) {
+                    }
+                    connection = null;
+                }
+            }
+        }
+        if (connection == null) {
+            if (ia == null) {
+                throw new SpreadException("null");
+            }
+            throw new SpreadException(ia.getHostName());
+        }
+
+        connection.add(new SpreadListener());
+    }
+
+    static void destruct(){
+        Thread t = new Thread(() -> {
+            try {
+                connection.disconnect();
+                logger.log(Level.INFO, "{0} -> spread disconnected.", new Object[]{Thread.currentThread().getName()});
+            } catch (SpreadException ex) {
+                logger.log(Level.INFO, "{0} -> spread could not be disconnected.", new Object[]{Thread.currentThread().getName()});
+            }
+        });
+        t.setDaemon(true);
+        t.setName("Disconnecter");
+        t.start();
+        try {
+            Thread.sleep(1250);
+        } catch (InterruptedException ex) {
+            Logger.getLogger(Spread.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        logger.log(Level.INFO, "{0} -> sleep over.", new Object[]{Thread.currentThread().getName()});
+    }
+}

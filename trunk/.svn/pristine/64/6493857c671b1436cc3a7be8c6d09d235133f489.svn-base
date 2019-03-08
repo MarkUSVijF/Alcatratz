@@ -1,0 +1,30 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.server.connectionMW;
+
+import at.falb.games.alcatraz.api.Player;
+import java.rmi.RemoteException;
+import net.technikumwien.bic4b18_01.server.common.Game;
+
+/**
+ *
+ * @author Florian
+ */
+public interface IServer2ClientMW {
+
+    public void playerJoined(final String connection, final Game game)
+            throws RemoteException;
+
+    public void playerLeft(final Player player, final Game game)
+            throws RemoteException;
+
+    public void startGame(final Game game)
+            throws RemoteException;
+
+    public void stopGame(final Game game)
+            throws RemoteException;
+
+}

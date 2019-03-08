@@ -1,0 +1,22 @@
+package net.technikumwien.bic4b18_01.common.rmi;
+
+import at.falb.games.alcatraz.api.Player;
+import java.rmi.Remote;
+import java.rmi.RemoteException;
+import java.util.ArrayDeque;
+import java.util.HashSet;
+
+public interface RMI_Server2Client extends Remote {
+
+    public void playerJoined(Player player)
+            throws RemoteException;
+
+    public void playerLeft(Player player)
+            throws RemoteException;
+
+    public void gameFull(GameInfo game, HashSet<String> playerConnections)
+            throws RemoteException;
+
+    public void gameEnded(ArrayDeque<MoveInfo> lastMoves)
+            throws RemoteException;
+}

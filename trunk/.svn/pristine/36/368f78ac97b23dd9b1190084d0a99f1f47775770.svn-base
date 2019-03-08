@@ -1,0 +1,81 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.server.connectionMW;
+
+import java.net.MalformedURLException;
+import java.rmi.RemoteException;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import net.technikumwien.bic4b18_01.common.assist.TraceHelper;
+import spread.SpreadException;
+
+/**
+ *
+ * @author Florian
+ * to setup all OUTGOING traffic
+ */
+public class ConnectionOUT {
+
+    /**
+     * -1 not constructed
+     * 0 in construction
+     * 1 constructed
+     */
+    private static int constructed = -1;
+    private static final Byte LOCK_CONSTRUCTED = 0;
+    private static final Logger logger = Logger.getLogger(TraceHelper.getClassName());
+
+    //##########################################################################
+    public static void construct() throws RemoteException, MalformedURLException, SpreadException {
+        synchronized (LOCK_CONSTRUCTED) {
+            if (constructed != -1) {
+                return;
+            }
+            constructed = 0;
+        }
+
+        ToClient.construct();
+        Spread.construct();
+
+        synchronized (LOCK_CONSTRUCTED) {
+            constructed = 1;
+        }
+    }
+
+    public static void destruct() throws SpreadException {
+        synchronized (LOCK_CONSTRUCTED) {
+            if (constructed == -1) {
+                return;
+            }
+        }
+        while (true) {
+            synchronized (LOCK_CONSTRUCTED) {
+                if (constructed == 1) {
+
+                    //destruct
+                    ToClient.destruct();
+                    Spread.destruct();
+
+                    constructed = -1;
+                }
+                if (constructed == -1) {
+                    break;
+                }
+            }
+            try {
+                Thread.sleep(60000);// timeout 1min
+            } catch (InterruptedException ex) {
+                logger.log(Level.SEVERE, null, ex);
+            }
+        }
+    }
+
+    public static boolean isConstructed() {
+        synchronized (LOCK_CONSTRUCTED) {
+            return constructed == 1;
+        }
+    }
+}

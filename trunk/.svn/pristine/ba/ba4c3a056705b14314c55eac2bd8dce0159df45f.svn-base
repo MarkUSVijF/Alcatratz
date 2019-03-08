@@ -1,0 +1,37 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.server.common;
+
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+import net.technikumwien.bic4b18_01.common.exception.GameException;
+import net.technikumwien.bic4b18_01.common.rmi.GameInfo;
+
+/**
+ *
+ * @author Florian
+ */
+public class GameList {
+    
+    private static final Map<Integer, Game> openGames = new HashMap(); // gameID -> gameInstance
+    private static final Map<Integer, Game> activeGames = new HashMap(); // gameID -> gameInstance
+    private static final Set<Game> closingGames = new HashSet(); // gameID -> gameInstance
+    private static final Map<String, Integer> userID_gameID = new HashMap(); // connection [IP:PORT] -> gameID
+    
+    private static final transient ReadWriteLock lock = new ReentrantReadWriteLock();
+    
+    
+    public static GameInfo addGame(String connection,int gameSize, String playerName) throws GameException{
+        Game game = new Game(gameSize,playerName,connection);
+        openGames.put(game.getGameID(), game);
+        
+        return game.getGameInfo();
+    }
+}

@@ -1,0 +1,69 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.server.spread;
+
+import java.io.Serializable;
+import java.lang.invoke.WrongMethodTypeException;
+import java.util.AbstractMap;
+import java.util.ArrayDeque;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.NoSuchElementException;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import net.technikumwien.bic4b18_01.common.assist.RUID;
+import net.technikumwien.bic4b18_01.common.assist.TODO;
+import net.technikumwien.bic4b18_01.common.assist.TraceHelper;
+import net.technikumwien.bic4b18_01.common.exception.ConnectionException;
+import net.technikumwien.bic4b18_01.common.exception.GameException;
+import net.technikumwien.bic4b18_01.common.rmi.GameInfo;
+import net.technikumwien.bic4b18_01.common.rmi.MoveInfo;
+import net.technikumwien.bic4b18_01.server.common.ClientRequests;
+import net.technikumwien.bic4b18_01.server.common.Data;
+import net.technikumwien.bic4b18_01.server.common.Game;
+import net.technikumwien.bic4b18_01.server.common.GameList;
+import net.technikumwien.bic4b18_01.server.common.Response;
+import spread.AdvancedMessageListener;
+import spread.MembershipInfo;
+import spread.SpreadException;
+import spread.SpreadGroup;
+import spread.SpreadMessage;
+
+/**
+ *
+ * @author Florian can listen to multiple groups!!!
+ */
+public class SpreadListener implements AdvancedMessageListener {
+
+    private static final Logger logger = Logger.getLogger(TraceHelper.getClassName());
+
+    @Override
+    public void membershipMessageReceived(SpreadMessage sm) {
+        logger.log(Level.INFO, "SPREAD -> received membershipMSG {0}.", new Object[]{sm.getMembershipInfo().getGroup().toString()});
+        MembershipInfo membershipInfo = sm.getMembershipInfo();
+    }
+
+    @Override
+    public void regularMessageReceived(SpreadMessage sm) {
+        try {
+            for (SpreadGroup sg : Arrays.asList(sm.getGroups())) {
+                if (sg.toString().equals(SynchronSpreadMessage.getGroupName())) {
+                    SynchronSpreadMessage.process(sm);
+                }
+                if (sg.toString().equals(AsynchronSpreadMessage.getGroupName())) {
+                    AsynchronSpreadMessage.process(sm);
+                }
+                if (sg.toString().contains(Data.getServerID().toString())) {
+                    PrivatSpreadMessage.process(sm);
+                }
+            }
+        } catch (SpreadException ex) {
+            Logger.getLogger(SpreadListener.class.getName()).log(Level.SEVERE, null, ex);
+        }
+    }
+}

@@ -1,0 +1,53 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.client.rmi;
+
+import at.falb.games.alcatraz.api.Player;
+import java.rmi.RemoteException;
+import java.util.ArrayDeque;
+import java.util.HashSet;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import net.technikumwien.bic4b18_01.common.assist.TraceHelper;
+import net.technikumwien.bic4b18_01.common.rmi.GameInfo;
+import net.technikumwien.bic4b18_01.common.rmi.MoveInfo;
+import net.technikumwien.bic4b18_01.common.rmi.RMI_Server2Client;
+
+/**
+ *
+ * @author Florian
+ */
+public class Server2Client implements RMI_Server2Client {
+
+    private static final Logger logger = Logger.getLogger(TraceHelper.getClassName());
+
+    public Server2Client() {
+    }
+
+    @Override
+    public void playerJoined(Player player) throws RemoteException {
+        logger.log(Level.SEVERE, "{0}.{1} - Not supported yet.", new Object[]{TraceHelper.getClassName(), TraceHelper.getMethodName()});
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public void playerLeft(Player player) throws RemoteException {
+        logger.log(Level.SEVERE, "{0}.{1} - Not supported yet.", new Object[]{TraceHelper.getClassName(), TraceHelper.getMethodName()});
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public void gameFull(GameInfo game, HashSet<String> playerConnections) throws RemoteException {
+        logger.log(Level.SEVERE, "{0}.{1} - Not supported yet.", new Object[]{TraceHelper.getClassName(), TraceHelper.getMethodName()});
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public void gameEnded(ArrayDeque<MoveInfo> lastMoves) throws RemoteException {
+        logger.log(Level.SEVERE, "{0}.{1} - Not supported yet.", new Object[]{TraceHelper.getClassName(), TraceHelper.getMethodName()});
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+}

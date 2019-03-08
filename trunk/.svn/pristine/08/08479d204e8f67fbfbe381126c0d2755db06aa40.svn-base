@@ -1,0 +1,84 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.server.spread;
+
+import java.util.ArrayDeque;
+import net.technikumwien.bic4b18_01.server.applicationMW.Spread;
+import java.util.Arrays;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import net.technikumwien.bic4b18_01.common.assist.TraceHelper;
+import net.technikumwien.bic4b18_01.server.rmi.CallBackManager;
+import spread.AdvancedMessageListener;
+import spread.MembershipInfo;
+import spread.SpreadException;
+import spread.SpreadGroup;
+import spread.SpreadMessage;
+
+/**
+ *
+ * @author Florian can listen to multiple groups!!!
+ */
+public class SpreadListener implements AdvancedMessageListener {
+
+    private static final Logger logger = Logger.getLogger(TraceHelper.getClassName());
+    private static final Thread regularWorker;
+    private static final ArrayDeque<SpreadMessage> regularMessages;
+    private static final Thread membershipWorker;
+    private static final ArrayDeque<SpreadMessage> membershipMessages;
+    
+    static{
+        regularMessages=new ArrayDeque();
+        regularWorker= new Thread(() -> {
+            
+        });
+        regularWorker.setDaemon(true);
+        regularWorker.setName("SPREAD message worker");
+        
+        membershipMessages=new ArrayDeque();
+        membershipWorker= new Thread(() -> {
+            
+        });
+        membershipWorker.setDaemon(true);
+        membershipWorker.setName("SPREAD message worker");
+        
+        
+        regularWorker.start();
+        membershipWorker.start();
+    }
+
+    @Override
+    public void membershipMessageReceived(SpreadMessage sm) {
+        logger.log(Level.INFO, "{0} -> received membershipMSG {1}.", new Object[]{Thread.currentThread().getName(), sm.getMembershipInfo().getGroup().toString()});
+        MembershipInfo membershipInfo = sm.getMembershipInfo();
+        if(membershipInfo.isCausedByJoin()){
+            String joined=membershipInfo.getJoined().toString();
+            if(joined.contains(Spread.getServerID().toString())){
+                //selfjoin
+                CallBackManager.addMyHandle(joined);
+            }
+        }
+    }
+
+    @Override
+    public void regularMessageReceived(SpreadMessage sm) {
+        try {
+            for (SpreadGroup sg : Arrays.asList(sm.getGroups())) {
+                if (sg.toString().equals(SynchronSpreadMessage.getGroupName())) {
+                    SynchronSpreadMessage.process(sm);
+                }
+                if (sg.toString().equals(AsynchronSpreadMessage.getGroupName())) {
+                    AsynchronSpreadMessage.process(sm);
+                }
+                if (sg.toString().contains(Spread.getServerID().toString())) {
+                    PrivatSpreadMessage.process(sm);
+                }
+            }
+        } catch (SpreadException ex) {
+            logger.log(Level.SEVERE, "{0} -> SpreadException", Thread.currentThread().getName());
+        }
+    }
+}

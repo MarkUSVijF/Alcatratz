@@ -1,0 +1,68 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package apllicationMW;
+
+import java.net.MalformedURLException;
+import java.rmi.RemoteException;
+import java.rmi.registry.LocateRegistry;
+import java.rmi.server.UnicastRemoteObject;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import net.technikumwien.bic4b18_01.common.assist.TraceHelper;
+import net.technikumwien.bic4b18_01.common.rmi.RMI_Server2Client;
+
+/**
+ *
+ * @author Florian
+ */
+public class Middleware {
+
+    private static final Logger logger = Logger.getLogger(TraceHelper.getClassName());
+    public static String myConnection = "";
+
+    public static void destruct() {
+        ToServer.destruct();
+        GameConnection.destruct(myConnection);
+        int port = Integer.parseInt(myConnection.substring(myConnection.indexOf(':') + 1));
+        try {
+            UnicastRemoteObject.unexportObject(LocateRegistry.getRegistry(port), true);
+        } catch (RemoteException ex) {
+            logger.log(Level.WARNING, "{0} -> destruction of localregistry on port {1} not possible", new Object[]{Thread.currentThread().getName(), port});
+        }
+        System.clearProperty("sun.rmi.transport.tcp.responseTimeout");
+    }
+
+    public static void construct(RMI_Server2Client s2c) {
+        logger.log(Level.INFO, "{0} -> Starting up clientside service...", Thread.currentThread().getName());
+
+        while (true) {
+            myConnection = ToServer.construct(s2c);
+            if (myConnection == null) {
+                ToServer.destruct();
+                continue;
+            }
+            try {
+                GameConnection.construct(myConnection);
+                break;
+            } catch (RemoteException | MalformedURLException ex) {
+                logger.log(Level.SEVERE, "{0} -> local registry error [HOW?]", Thread.currentThread().getName());
+                ToServer.destruct();
+                try {
+                    int port = Integer.parseInt(myConnection.substring(myConnection.indexOf(':') + 1));
+                    try {
+                        UnicastRemoteObject.unexportObject(LocateRegistry.getRegistry(port), true);
+                    } catch (RemoteException ex1) {
+                        logger.log(Level.INFO, "{0} -> localRegistry already unexported", Thread.currentThread().getName());
+                    }
+                    //-> need to free port too. no idea how tho
+                } catch (NumberFormatException ex1) {
+                    //catch everything
+                }
+            }
+        }
+        logger.log(Level.INFO, "{0} -> clientside service up and running...", Thread.currentThread().getName());
+    }
+}

@@ -1,0 +1,156 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.server.spread;
+
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import net.technikumwien.bic4b18_01.common.assist.TraceHelper;
+import net.technikumwien.bic4b18_01.server.applicationMW.Middleware;
+import net.technikumwien.bic4b18_01.server.applicationMW.Spread;
+import net.technikumwien.bic4b18_01.server.rmi.CallBackManager;
+import spread.MembershipInfo;
+import spread.SpreadGroup;
+import spread.SpreadMessage;
+
+/**
+ *
+ * @author Florian
+ */
+public class MembershipMessage {
+    private static final Logger logger = Logger.getLogger(TraceHelper.getClassName());
+    public static SpreadMessage updateMsgForMe = null;
+    public static final Thread membershipWorker;//only memb
+    private static final Deque<SpreadMessage> membershipMessages;
+    
+    static {
+        membershipMessages = new ArrayDeque();
+        membershipWorker = new Thread(() -> {
+            while (true) {
+                while (true) {
+                    SpreadMessage sm;
+                    Middleware.serverStateLock.readLock().lock();
+                    try {
+                        synchronized (membershipMessages) {
+                            if (membershipMessages.isEmpty()) {
+                                break;
+                            }
+                            sm = membershipMessages.poll();
+                        }
+                    } finally {
+                        Middleware.serverStateLock.readLock().unlock();
+                    }
+                    process(sm);
+                }
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException ex) {
+                }
+            }
+        });
+        membershipWorker.setDaemon(true);
+        membershipWorker.setName("SPREAD  Connection   - " + Spread.getServerID());
+        membershipWorker.start();
+    }
+
+    public static void add(SpreadMessage sm) {
+        Middleware.serverStateLock.readLock().lock();
+        try {
+            membershipMessages.add(sm);
+            logger.log(Level.INFO, "{0} -> regularMessages to work:{1}", new Object[]{Thread.currentThread().getName(), membershipMessages.size()});
+            if (membershipWorker.isAlive()) {
+                membershipWorker.interrupt();
+            }
+        } finally {
+            Middleware.serverStateLock.readLock().unlock();
+        }
+    }
+
+    public static void process(SpreadMessage sm) {
+        logger.log(Level.INFO, "{0} -> received membershipMSG {1}.", new Object[]{Thread.currentThread().getName(), sm.getMembershipInfo().getGroup().toString()});
+        MembershipInfo membershipInfo = sm.getMembershipInfo();
+
+        if (membershipInfo.isCausedByJoin()) {
+            logger.log(Level.INFO, "{0} -> isCausedByJoin.", new Object[]{Thread.currentThread().getName()});
+            SpreadGroup member = membershipInfo.getJoined();
+            if (member.toString().contains(Spread.getServerID().toString())) {
+                processSelfJoinMessage(sm);
+            }
+        }
+        if (membershipInfo.isCausedByDisconnect()) {
+            logger.log(Level.INFO, "{0} -> isCausedByDisconnect.", new Object[]{Thread.currentThread().getName()});
+            SpreadGroup member = membershipInfo.getDisconnected();
+            processMemberLeftMessage(sm, member);
+        }
+        if (membershipInfo.isCausedByLeave()) {
+            logger.log(Level.INFO, "{0} -> isCausedByLeave.", new Object[]{Thread.currentThread().getName()});
+            SpreadGroup member = membershipInfo.getLeft();
+            processMemberLeftMessage(sm, member);
+        }
+        if (membershipInfo.isSelfLeave()) {
+            logger.log(Level.INFO, "{0} -> isSelfLeave.", new Object[]{Thread.currentThread().getName()});
+            processSelfLeaveMessage(sm);
+        }
+        /*
+        if (membershipInfo.isCausedByNetwork()) {
+            logger.log(Level.INFO, "{0} -> isCausedByNetwork.", new Object[]{Thread.currentThread().getName()});
+            //processJoinedMembershipMessage(sm);
+        }
+        if (membershipInfo.isRegularMembership()) {
+            logger.log(Level.INFO, "{0} -> isRegularMembership.", new Object[]{Thread.currentThread().getName()});
+            //processJoinedMembershipMessage(sm);
+        }
+        if (membershipInfo.isTransition()) {
+            logger.log(Level.INFO, "{0} -> isTransition.", new Object[]{Thread.currentThread().getName()});
+            membershipInfo.getGroup();
+            //processJoinedMembershipMessage(sm);
+        }
+        */
+    }
+
+    // only self join
+    private static void processSelfJoinMessage(SpreadMessage sm) {
+        MembershipInfo membershipInfo = sm.getMembershipInfo();
+        String joined = membershipInfo.getJoined().toString();
+        logger.log(Level.INFO, "{0} -> selfJoin.", new Object[]{Thread.currentThread().getName()});
+        //selfjoin
+        CallBackManager.addMyHandle(joined);
+
+        if (membershipInfo.getGroup().toString().equals(SynchronSpreadMessage.getGroupName())) {
+            synchronized (Middleware.state) {
+                if (Middleware.state.toInt() == 0) {
+                    if (membershipInfo.getMembers().length == 1) {
+                        logger.log(Level.INFO, "{0} -> I am alone.", new Object[]{Thread.currentThread().getName()});
+                        Middleware.state.setInt(4);
+                        SpreadListener.regularWorker.start();
+                        return;
+                    }
+                    //get current server state
+                    logger.log(Level.INFO, "{0} -> please update me. {1}", new Object[]{Thread.currentThread().getName(), membershipInfo.getMembers().length});
+                    SynchronSpreadMessage.sendGetServerState();
+                }
+            }
+
+        }
+    }
+
+    private static void processSelfLeaveMessage(SpreadMessage sm) {
+        logger.log(Level.INFO, "{0} -> selfLeave.", new Object[]{Thread.currentThread().getName()});
+        
+        Middleware.serverStateLock.writeLock().lock();
+        try {
+            Middleware.state.setInt(0);
+        } finally {
+            Middleware.serverStateLock.writeLock().unlock();
+        }
+    }
+
+    private static void processMemberLeftMessage(SpreadMessage sm, SpreadGroup member) {
+        logger.log(Level.INFO, "{0} -> member left: {1}.", new Object[]{Thread.currentThread().getName(), member.toString()});
+        AsynchronSpreadMessage.sendTakeOverMessage(member.toString());
+    }
+}

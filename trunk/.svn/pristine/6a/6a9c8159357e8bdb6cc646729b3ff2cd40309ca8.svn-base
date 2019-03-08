@@ -1,0 +1,163 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.server.common;
+
+import java.util.ArrayDeque;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+import net.technikumwien.bic4b18_01.common.assist.TODO;
+import net.technikumwien.bic4b18_01.common.exception.GameException;
+import net.technikumwien.bic4b18_01.common.rmi.GameInfo;
+import net.technikumwien.bic4b18_01.common.rmi.MoveInfo;
+import net.technikumwien.bic4b18_01.server.connectionMW.ToClient;
+
+/**
+ *
+ * @author Florian
+ */
+public class GameList {
+
+    private static final Map<Integer, Game> openGames = new HashMap<Integer, Game>(); // gameID -> gameInstance
+    private static final Map<Integer, Game> activeGames = new HashMap<Integer, Game>(); // gameID -> gameInstance
+    private static final Map<Integer, Game> closingGames = new HashMap<Integer, Game>(); // gameID -> gameInstance
+    private static final Map<String, Integer> userID_gameID = new HashMap<String, Integer>(); // connection [IP:PORT] -> gameID
+
+    private static final transient ReadWriteLock lock = new ReentrantReadWriteLock();
+
+    public static Set<GameInfo> getOpenGames() {
+        Set<GameInfo> games = new HashSet();
+        lock.readLock().lock();
+        try {
+            openGames.entrySet().forEach((e) -> {
+                games.add(e.getValue().getGameInfo()); // copy
+            });
+        } finally {
+            lock.readLock().unlock();
+        }
+        return games;
+    }
+
+    public static GameInfo newGame(final String connection, final String playerName, final int gameSize) throws GameException {
+        final Game game = new Game(gameSize);
+        game.addPlayer(playerName, connection);
+        lock.writeLock().lock();
+        try {
+            openGames.put(game.getGameID(), game);
+            userID_gameID.put(connection, game.getGameID());
+        } finally {
+            lock.writeLock().unlock();
+        }
+        return game.getGameInfo();//copy
+    }
+
+    public static GameInfo addPlayerToGame(final String connection, final String playerName, final int gameID) throws GameException {
+        final Game game;
+        lock.writeLock().lock();
+        try {
+            game = openGames.get(gameID);
+            if (game == null) {
+                if (activeGames.containsKey(gameID) || closingGames.containsKey(gameID)) {
+                    throw new GameException("Can not join game, already started.");
+                }
+                throw new GameException("Game could not be found.");
+            }
+            game.addPlayer(playerName, connection);
+            userID_gameID.put(connection, game.getGameID());
+            if (game.isFull()) {
+                openGames.remove(gameID);
+                activeGames.put(gameID, game);
+                ToClient.startGame(new Game(game));// copy
+            } else {
+                openGames.put(gameID, game);
+            }
+        } finally {
+            lock.writeLock().unlock();
+        }
+        return game.getGameInfo();//copy
+    }
+
+    public static void removePlayerFromHisGame(final String connection) throws GameException {
+        final Game game;
+        lock.writeLock().lock();
+        try {
+            Integer gameID = userID_gameID.get(connection);
+            if (gameID == null) {
+                return; //Player not in any game
+            }
+            if (openGames.get(gameID) != null) {
+                game = openGames.get(gameID);
+                game.removePlayer(connection);
+                userID_gameID.remove(connection);
+                if (game.isEmpty()) {
+                    openGames.remove(gameID);
+                } else {
+                    openGames.put(gameID, game);
+                }
+                return;
+            }
+            if (activeGames.containsKey(gameID)) {
+                throw new GameException("Can not leave game, already started.");
+            }
+            if (closingGames.containsKey(gameID)) {
+                //aborted a closing game -> possible
+                game = closingGames.get(gameID);
+                game.removePlayer(connection);
+                if (game.isEmpty()) {
+                    closingGames.remove(gameID);
+                } else {
+                    closingGames.put(gameID, game);
+                }
+                userID_gameID.remove(connection);
+                return;
+            }
+            userID_gameID.remove(connection);
+        } finally {
+            lock.writeLock().unlock();
+        }
+        //Player not in any game
+    }
+
+    public static void finishGameWithMoves(final String connection, final ArrayDeque<MoveInfo> moves) throws GameException {
+        final Game game;
+        lock.writeLock().lock();
+        try {
+            Integer gameID = userID_gameID.get(connection);
+            if (gameID == null) {
+                throw new GameException("Client not part of any game.");
+            }
+            game = activeGames.get(gameID);
+            if (game == null) {
+                return; // game not active
+            }
+            if (!game.getConnections().contains(connection)) {
+                throw new GameException("Client not part of given game.");
+            }
+            activeGames.remove(gameID);
+            closingGames.put(gameID, game);
+            //ToClient.stopGame(game, moves);// reference to game!!!
+            TODO.MORE.todo("finishGameWithMoves", "threadmanagment to stop games");
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    public static void unregisterClient(final String connection) throws GameException {
+        lock.writeLock().lock();
+        try {
+            Integer gameID = userID_gameID.get(connection);
+            if (gameID != null) {
+                removePlayerFromHisGame(connection);
+            }
+            userID_gameID.remove(connection);
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+}

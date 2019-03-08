@@ -1,0 +1,72 @@
+package net.technikumwien.bic4b18_01.client.local;
+
+import java.io.IOException;
+import java.util.Random;
+import java.util.Set;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import net.technikumwien.bic4b18_01.client.connectionMW.ConnectionOUT;
+import net.technikumwien.bic4b18_01.client.connectionMW.IClient2ClientMW;
+import net.technikumwien.bic4b18_01.client.connectionMW.ToServer;
+import net.technikumwien.bic4b18_01.common.assist.RUID;
+import net.technikumwien.bic4b18_01.common.assist.TraceHelper;
+import net.technikumwien.bic4b18_01.common.settings.LoggerSettings;
+import static net.technikumwien.bic4b18_01.common.assist.TODO.MORE;
+import net.technikumwien.bic4b18_01.common.exception.GameException;
+import net.technikumwien.bic4b18_01.common.rmi.GameInfo;
+
+public class ClientApplication {
+
+    /**
+     *
+     * @param args
+     */
+    private static final Logger logger = Logger.getLogger(TraceHelper.getClassName());
+
+    static {
+        try {
+            LoggerSettings.initLogging();
+        } catch (IOException ex) {
+            logger.log(Level.SEVERE, "{0} -> logger could not be started", Thread.currentThread().getName());
+        }
+        ConnectionOUT.construct();
+    }
+    
+    public static void main(String[] args) {
+
+        //Ab hier test code ^^
+        Set<GameInfo> games = ToServer.getGames();
+        GameInfo game;
+        if (games.isEmpty()) {
+            try {
+                game = ToServer.hostGame((new Random()).nextInt(3) + 2, RUID.new_9().toString());
+                System.out.println("\nPlayer (Name:" +game.getPlayers().get(0).getName()+ ") is hosting now a game for "+game.getGameSize()+"!\n");
+            } catch (GameException ex) {
+                logger.log(Level.SEVERE, "{0} -> TEST APPLICATION ERROR", Thread.currentThread().getName());
+            }
+        } else {
+            for (GameInfo g : games) {
+                try {
+                    String name=RUID.new_9().toString();
+                    game = ToServer.joinGame(g.getGameID(), name);
+                    System.out.println("\nPlayer (Name:" +name+ ") joined a game! size left = "+(game.getGameSize()-game.getPlayersInGame())+"\n");
+                    break;
+                } catch (GameException ex) {
+                logger.log(Level.INFO, "{0} -> game full", Thread.currentThread().getName());
+                }
+            }
+        }
+            games = ToServer.getGames();
+        System.out.println("\nGamesTojoinLeft: +"+games.size()+"\n");
+        /**
+         * more stuff TODO
+         */
+        MORE.todo(ClientApplication.class.getName()); // like GUI an such
+
+        IClient2ClientMW gameConnection = ConnectionOUT.getToClient();
+
+        //kommentier die untere zeile aus um spiele nach dem laufen im server zu lassen
+       // ConnectionOUT.destruct();// letzter aufruf bevor das programm beendet wird.
+       // System.exit(0);// stops JVM
+    }
+}

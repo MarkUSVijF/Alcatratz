@@ -1,0 +1,25 @@
+package net.technikumwien.bic4b18_01.common.rmi;
+
+import java.rmi.Remote;
+import java.rmi.RemoteException;
+import java.util.ArrayDeque;
+import java.util.HashSet;
+import java.util.Set;
+
+public interface RMI_Server2Client extends Remote {
+
+    //Client is in a lobby waiting for game start:
+    //##########################################################################
+    
+    //combination of playerJoined & playerLeft
+    public void playerChange(GameInfo game)
+            throws RemoteException;
+
+    public void gameStart(GameInfo game, Set<String> playerConnections, int playerID)
+            throws RemoteException;
+
+    //Client is playing the game when someone else wins
+    //##########################################################################
+    public void gameEnd(ArrayDeque<MoveInfo> lastMoves)
+            throws RemoteException;
+}

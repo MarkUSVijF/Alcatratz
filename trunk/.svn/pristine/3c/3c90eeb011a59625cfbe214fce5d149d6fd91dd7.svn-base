@@ -1,0 +1,157 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.server.rmi;
+
+import java.rmi.RemoteException;
+import java.rmi.server.RemoteServer;
+import java.rmi.server.ServerNotActiveException;
+import java.util.ArrayDeque;
+import java.util.HashSet;
+import java.util.Random;
+import java.util.UUID;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import net.technikumwien.bic4b18_01.common.assist.TraceHelper;
+import net.technikumwien.bic4b18_01.common.exception.ConnectionException;
+import net.technikumwien.bic4b18_01.common.exception.GameException;
+import net.technikumwien.bic4b18_01.common.rmi.GameInfo;
+import net.technikumwien.bic4b18_01.common.rmi.MoveInfo;
+import net.technikumwien.bic4b18_01.common.rmi.RMI_Client2Server;
+import net.technikumwien.bic4b18_01.common.assist.TODO;
+import net.technikumwien.bic4b18_01.server.common.ServerData;
+
+/**
+ *
+ * @author Florian
+ */
+public class Client2Server implements RMI_Client2Server {
+
+    private final ServerData.RMI RMIdata;
+    private static final Logger logger = Logger.getLogger(TraceHelper.getClassName());
+
+    public Client2Server() {
+
+        RMIdata = ServerData.RMI.getInstance();
+    }
+
+    /**
+     * lokal reserve
+     *
+     * @param cUID client UUID used while in construction
+     * @return
+     * @throws RemoteException
+     * @throws ConnectionException
+     */
+    @Override
+    public int reservePort(UUID cUID) throws RemoteException, ConnectionException {
+        String clientHost;
+        String connection;
+        int startPort = (new Random()).nextInt(RMIdata.MAXPORT + 1 - RMIdata.MINPORT) + RMIdata.MINPORT; //creates a random port for client
+        int port = startPort;
+
+        try {
+            clientHost = RemoteServer.getClientHost();
+        } catch (ServerNotActiveException ex) {
+            logger.log(Level.SEVERE, "server not started [HOW?]", ex);
+            throw new RemoteException("server not up and running");
+        }
+        logger.log(Level.INFO, "reserving a port for {0}", clientHost);
+
+        while (true) {
+            connection = clientHost + ":" + port;
+            if (!RMIdata.hasClient(connection)) {
+                break;
+            }
+            port++;
+            if (port > RMIdata.MAXPORT) {
+                port = RMIdata.MINPORT;
+            }
+            if (port == startPort) {
+                logger.log(Level.INFO, "no port free for {0}", clientHost);
+                throw new ConnectionException("no port free for your IP");
+            }
+        }
+
+        TODO.METHOD.todo(Client2Server.class.getName());// reserve port for UUID - localy
+        logger.log(Level.INFO, "reserved connection on {0}", connection);
+
+        return port;
+    }
+
+    /**
+     *
+     * @param cUID client UUID used while in construction
+     * @param port
+     * @return 
+     * @throws RemoteException
+     * @throws ConnectionException
+     */
+    @Override
+    public String registerClient(UUID cUID, int port) throws RemoteException, ConnectionException{
+        port = Integer.parseInt("" + port);
+        String connection = getClientConnection(port);
+
+        //spread
+        //test on cUID
+        boolean userAdded = RMIdata.addClient(connection);
+        if (userAdded) {
+            logger.log(Level.INFO, "user added on {0}", connection);
+            return connection;
+        }
+        logger.log(Level.WARNING, "{0} already in use", connection);
+        throw new ConnectionException("port already taken");
+
+    }
+
+    @Override
+    public HashSet<GameInfo> getGames(int port, int req) throws RemoteException {
+        String connection = getClientConnection(port);
+        return RMIdata.getOpenGames(connection, req);
+    }
+
+    @Override
+    public GameInfo hostGame(int port, int req, int players, String playerName) throws RemoteException, GameException {
+        logger.log(Level.SEVERE, "{0}.{1} - Not supported yet.", new Object[]{TraceHelper.getClassName(), TraceHelper.getMethodName()});
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public GameInfo joinGame(int port, int req, long gameID, String playerName) throws RemoteException, GameException {
+        logger.log(Level.SEVERE, "{0}.{1} - Not supported yet.", new Object[]{TraceHelper.getClassName(), TraceHelper.getMethodName()});
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public void leaveGame(int port, int req) throws RemoteException, GameException {
+        logger.log(Level.SEVERE, "{0}.{1} - Not supported yet.", new Object[]{TraceHelper.getClassName(), TraceHelper.getMethodName()});
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public void endGame(int port, int requestNr, ArrayDeque<MoveInfo> lastMoves) throws RemoteException, GameException {
+        logger.log(Level.SEVERE, "{0}.{1} - Not supported yet.", new Object[]{TraceHelper.getClassName(), TraceHelper.getMethodName()});
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public void unregisterClient(int port, int req) throws RemoteException {
+        logger.log(Level.SEVERE, "{0}.{1} - Not supported yet.", new Object[]{TraceHelper.getClassName(), TraceHelper.getMethodName()});
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    //##########################################################################
+    private String getClientConnection(int port) throws RemoteException {
+        String connection = null;
+        try {
+            connection = RemoteServer.getClientHost() + ":" + port;
+            logger.log(Level.INFO, "incomming connection from {0}", connection);
+        } catch (ServerNotActiveException ex) {
+            logger.log(Level.SEVERE, "server not started [HOW?]", ex);
+            throw new RemoteException("server not started [HOW?]");
+        }
+        return connection;
+    }
+}

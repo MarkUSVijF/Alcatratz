@@ -1,0 +1,47 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.client.rmi;
+
+import at.falb.games.alcatraz.api.MoveListener;
+import at.falb.games.alcatraz.api.Player;
+import at.falb.games.alcatraz.api.Prisoner;
+import java.rmi.RemoteException;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import net.technikumwien.bic4b18_01.common.rmi.MoveInfo;
+import net.technikumwien.bic4b18_01.common.rmi.RMI_Client2Client;
+
+/**
+ *
+ * @author alekpav1
+ */
+public class AlcatrazMoveListener implements MoveListener{
+    
+    private final RMI_Client2Client outgoing;
+
+    public AlcatrazMoveListener(RMI_Client2Client outgoing) {
+        this.outgoing = outgoing;
+    }
+    
+    @Override
+    public void moveDone(Player player, Prisoner prisoner, int rowOrCol, int row, int col) {
+        MoveInfo mv = new MoveInfo(0, player, prisoner, rowOrCol, row, col);
+        while (true) {
+            try {
+                outgoing.setMove(0, mv);
+                break;
+            } catch (RemoteException ex) {
+                Logger.getLogger(AlcatrazMoveListener.class.getName()).log(Level.SEVERE, null, ex);
+            }
+        }
+    }
+
+    @Override
+    public void gameWon(Player player) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+    
+}

@@ -1,0 +1,41 @@
+@ECHO OFF
+if "x%JAVA_HOME%" NEQ "x" (
+ set CLASSPATH=..\common\target\classes;..\server\target\classes;..\client\target\classes;..\spread\target\classes;..\*
+ exit /B 0
+)
+set jdks="C:\Program Files\Java\jdk1.8.0_121" "C:\Program Files\Java\jdk1.8.0_162" "C:\Program Files\Java\jdk1.8.0_152"
+set ERRORLEVEL=1
+for %%j in (%jdks%) do (
+  echo looking for %%~j
+  if %ERRORLEVEL% == 1 (
+    set ERRORLEVEL=0
+    set JAVA_HOME=%%~j
+    set JAVAC=javac.exe
+    where /q javac.exe
+  )
+)
+if "x%JAVA_HOME%" == "x" (
+  echo javac cannot be found and JAVA_HOME not defined.
+  echo Please let JAVA_HOME point to your JDK directory by
+  echo executing set JAVA_HOME=Path-to-your-JDK-installation
+  echo For example: set JAVA_HOME=c:\Program Files\Java\jdk1.8.0_121
+  exit /B 1
+) else (
+  if exist "%JAVA_HOME%\bin\javac.exe" (
+    set JAVAC=%JAVA_HOME%\bin\javac.exe
+  ) else (
+      echo javac cannot be found. Please make sure that JAVA_HOME
+      echo points to the correct directory of your JDK installation.
+      exit /B 1
+  )
+  if exist "%JAVA_HOME%\bin\rmiregistry.exe" (
+    set RMIREGISTRY=%JAVA_HOME%\bin\rmiregistry.exe
+  ) else (
+    echo rmiregistry cannot be found. Please make sure that JAVA_HOME
+    echo points to the correct directory of your JDK installation.
+    exit /B 1
+  )
+)
+set CLASSPATH=..\common\target\classes;..\server\target\classes;..\client\target\classes;..\spread\target\classes;..\*
+echo java found! %JAVA_HOME%
+exit /B 0

@@ -1,0 +1,110 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.server.common;
+
+import java.io.Serializable;
+import java.rmi.RemoteException;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import net.technikumwien.bic4b18_01.common.assist.RUID;
+import net.technikumwien.bic4b18_01.common.exception.ConnectionException;
+import net.technikumwien.bic4b18_01.common.exception.GameException;
+
+/**
+ * collection of server data
+ * @author Florian
+ */
+public class Data {
+    private static final Logger logger = Logger.getLogger(Data.class.getName());
+    private static final Map<String, Response> client_requests = new HashMap();
+    private static final Map<Long, Thread> sleeping_threads = new HashMap();
+    private static final RUID serverID =RUID.new_9();
+    
+    //##########################################################################
+    //client requests:
+    /**
+     * 
+     * @param clientConnection
+     * @param requestNr
+     * @param expectedTyp
+     * @return
+     * @throws GameException 
+     * @throws NoSuchElementException 
+     * @throws ClassCastException 
+     */
+    public static Serializable getResponse(String clientConnection, int requestNr, String expectedTyp) throws GameException, NoSuchElementException, ClassCastException{
+        Response response;
+        synchronized (client_requests) {
+            response = client_requests.get(clientConnection);
+        }
+        if (response != null && response.reqID == requestNr) {
+            // add more throw clauses
+            if ("GameException".equals(response.type)) {
+                throw (GameException) response.value;
+            }
+            if (expectedTyp!=null && !expectedTyp.equals(response.type)){
+                throw new ClassCastException("object is not of expectedTyp.");
+            }
+            return response.value; // may be null!!!!
+        }
+        throw new NoSuchElementException();
+    }
+    public static void addResponse(String clientConnection, Response response){
+        
+        synchronized (client_requests) {
+            client_requests.put(clientConnection, response);
+        }
+    }
+    public static void addResponse(String clientConnection, int requestNr, Serializable value, String type){
+        
+        synchronized (client_requests) {
+            client_requests.put(clientConnection, new Response(requestNr, value, type));
+        }
+    }
+    //##########################################################################
+    //thread management
+    public static Serializable awaitResponse(long threadID, String clientConnection, int requestNr, String expectedType) throws GameException, ConnectionException, RemoteException{
+        
+        Data.sleeping_threads.put(threadID, Thread.currentThread());
+        //Die Anfrage wird an Spread weitergeleitet
+        try {
+            //Der Thread wird für 5 Minuten angehalten
+            //wir wollen geweckt werden
+            Thread.sleep(300000);
+        } catch (InterruptedException wakeup) {
+            try {
+                // throws GameException, ConnectionException others are cought
+                return Data.getResponse(clientConnection, requestNr, expectedType); 
+            } catch (NoSuchElementException ex) {
+                logger.log(Level.WARNING, "Request for {0} with NR {1} could not be finished.", new Object[]{clientConnection, requestNr});
+            } catch (ClassCastException ex) {
+                logger.log(Level.WARNING, "Request for {0} with NR {1} has unexpected Type", new Object[]{clientConnection, requestNr});
+            }
+            throw new RemoteException("request could not be finished.");
+        }
+        throw new RemoteException("timed out after 5 minutes");
+    }
+    public static void wakeupThread(long threadID, String connection, String sender, Response response){
+        
+        if (sender.contains(serverID.toString())) {
+            Thread sleepingThread;
+            synchronized (Data.sleeping_threads) {
+                sleepingThread = Data.sleeping_threads.remove(threadID);
+            }
+            if (sleepingThread != null && sleepingThread.isAlive()) {
+                sleepingThread.interrupt();
+            }
+        }
+    }
+    //##########################################################################
+    //server RUID
+    public static RUID getServerID(){
+        return serverID;
+    }
+}

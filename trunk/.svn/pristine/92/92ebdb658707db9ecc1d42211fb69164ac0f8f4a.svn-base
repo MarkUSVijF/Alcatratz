@@ -1,0 +1,93 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.spread.local;
+
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import static java.nio.file.StandardOpenOption.*;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Set;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import static net.technikumwien.bic4b18_01.common.assist.LocalNetwork.getMyIPs;
+import net.technikumwien.bic4b18_01.common.assist.RUID;
+import net.technikumwien.bic4b18_01.common.assist.TraceHelper;
+import static net.technikumwien.bic4b18_01.common.assist.TraceHelper.getTrunk;
+import net.technikumwien.bic4b18_01.common.rmi.ServerIPs;
+
+/**
+ *
+ * @author Florian
+ */
+public class ConfigSetup {
+
+    private static final Logger logger = Logger.getLogger(TraceHelper.getClassName());
+
+    /**
+     * use after changing ServerIPs!!!!!
+     *
+     * @param args the command line arguments
+     */
+    public static void main(String[] args) {
+            // TODO code application logic here
+            create();
+    }
+    
+/*
+Spread_Segment  127.0.0.225:9101 {
+
+	localhost 		127.0.0.1
+}
+DebugFlags = { PRINT EXIT SESSION GROUPS }
+EventPriority =  INFO
+EventTimeStamp = "[%y.%m.%d %H:%M-%S]"
+*/
+    public static void create(){
+        
+        try {
+            File trunk =getTrunk();
+            System.out.println(trunk.getPath());
+            Map<String, Set<String>> spreadAddresses = ServerIPs.spread();
+            
+            Set<String> myIPs=getMyIPs();
+            
+            boolean gotLocalhost = false;
+            String config = "";
+            for(Entry<String, Set<String>> subNetIPs:spreadAddresses.entrySet()){
+                config+="Spread_Segment  "+subNetIPs.getKey()+" {\n"
+                    + "\n";
+                for(String ip:subNetIPs.getValue()){
+                    String name;
+                    if(!gotLocalhost && myIPs.contains(ip)){
+                        name="localhost";
+                        gotLocalhost=true;
+                    } else {
+                        name=RUID.new_9().toString();
+                    }
+                    config+="	"+name+"		"+ip+"\n";
+                }
+                config+="}\n";
+            }
+            List<String> lines = Files.readAllLines(Paths.get(getTrunk().getPath() + "\\spread\\src\\main\\java\\net\\technikumwien\\bic4b18_01\\spread\\settings\\spreadFlags.txt"));
+            for(String s:lines){
+                config+=s+"\n";
+            }
+                    
+            Path path = Paths.get(trunk.getPath() + "\\spread\\spread-binary\\spread-bin-4.0.0\\bin\\win32\\spread.conf");
+            byte[] strToBytes = config.getBytes();
+
+            Files.write(path, strToBytes, CREATE, TRUNCATE_EXISTING, WRITE);
+
+        } catch (IOException ex) {
+            logger.log(Level.SEVERE, null, ex);
+        }
+    }
+}

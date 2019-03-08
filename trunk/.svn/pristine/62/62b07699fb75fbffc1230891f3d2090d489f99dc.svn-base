@@ -1,0 +1,36 @@
+Spread_Segment  172.16.0.255:9101 {
+
+	EXL2y8d1u		172.16.0.4
+	UAA4psmwy		172.16.0.3
+	LPVytspz5		172.16.0.2
+	JDQ77g92e		172.16.0.1
+	FYAa7y1p2		172.16.0.13
+	BVL5qywvf		172.16.0.12
+	PRFywsfi1		172.16.0.11
+	QSYhhndrm		172.16.0.9
+	GSMqiyvja		172.16.0.10
+	FTDwcpgzq		172.16.0.8
+	OBBy6zpad		172.16.0.20
+	DERxhttdy		172.16.0.7
+	PPLzkychu		172.16.0.6
+	AQEq5y2c4		172.16.0.5
+	LVR7t2c29		172.16.0.19
+	IJZ2mgcab		172.16.0.18
+	XVLhc2wsi		172.16.0.17
+	YSZtglqfw		172.16.0.16
+	PDGk6speu		172.16.0.15
+	SISowamcy		172.16.0.14
+}
+Spread_Segment  192.168.56.255:9101 {
+
+	XOCniagjw		192.168.56.105
+	DOOttiwd8		192.168.56.106
+	YPAa5cj0c		192.168.56.1
+	JORlat2v5		192.168.56.101
+	MVMieqebw		192.168.56.102
+	LNVcg5tpl		192.168.56.103
+	GUMi9okhh		192.168.56.104
+}
+DebugFlags = { PRINT EXIT SESSION GROUPS }
+EventPriority =  INFO
+EventTimeStamp = "[%y.%m.%d %H:%M-%S]"

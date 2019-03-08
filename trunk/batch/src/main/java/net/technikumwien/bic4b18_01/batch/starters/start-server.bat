@@ -1,0 +1,17 @@
+@echo off
+if "x%JAVA_HOME%" == "x" (call set-env.bat)
+
+echo build in netbeans!
+echo.
+::echo compiling common
+::call compile-common.bat
+::echo compiling server
+::call compile-server.bat
+::echo.
+
+echo starting server
+call java net.technikumwien.bic4b18_01.server.local.ServerApplication
+
+echo EOF
+pause
+goto :eof

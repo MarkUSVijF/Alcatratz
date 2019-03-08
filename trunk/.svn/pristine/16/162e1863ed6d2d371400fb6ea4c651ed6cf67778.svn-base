@@ -1,0 +1,14 @@
+@echo off
+call set-env.bat
+
+echo build in netbeans!
+echo.
+::echo compiling spread
+::call compile-spread.bat
+::echo.
+
+echo configorating spread
+call java net.technikumwien.bic4b18_01.spread.local.ConfigSetup
+
+echo EOF
+goto :eof

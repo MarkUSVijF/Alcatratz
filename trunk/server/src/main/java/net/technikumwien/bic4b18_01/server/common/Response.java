@@ -1,0 +1,31 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.server.common;
+
+import java.io.Serializable;
+
+/**
+ *
+ * @author Florian
+ */
+public class Response implements Serializable{
+
+    public final int reqID;
+    public final Serializable value;
+    public final String type;
+    public final String request;
+
+    public Response(int reqID, Serializable value, String type, String request) {
+        this.reqID = reqID;
+        this.value = value;
+        this.type = type;
+        this.request = request;
+    }
+    
+    public Response changeReqID(int reqID){
+        return new Response(reqID,this.value,this.type,this.request);
+    }
+}

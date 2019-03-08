@@ -1,0 +1,84 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.server.common;
+
+import at.falb.games.alcatraz.api.Player;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Set;
+import net.technikumwien.bic4b18_01.common.exception.GameException;
+import net.technikumwien.bic4b18_01.common.rmi.GameInfo;
+
+/**
+ *
+ * @author Florian
+ */
+public class Game {
+
+    private static int newGameID = 0;
+    private final GameInfo gameInfo;
+    private final HashMap<String, Integer> playerConnections; // [IP:Port] -> playerID
+    //private int currentSize; //# == playerConnections.size()
+    //private final int maxSize; //# == gameInfo.getPlayerList().length;
+
+    public Game(int gameSize, String HostPlayerName, String HostPlayerConnection) throws GameException {
+        if (gameSize < 2 || gameSize > 4) {
+            throw new GameException("game size out of range {2-4}");
+        }
+        Game.newGameID++;
+        this.gameInfo = new GameInfo(Game.newGameID, gameSize);
+        Player player = this.gameInfo.addPlayer(HostPlayerName);
+        this.playerConnections = new HashMap();
+        this.playerConnections.put(HostPlayerConnection, player.getId());
+    }
+
+    public boolean addPlayer(String playerName, String playerConnection) throws GameException {
+
+        Player player;
+        synchronized (this.playerConnections) {
+            player = this.gameInfo.addPlayer(playerName);
+            this.playerConnections.put(playerConnection, player.getId());
+            return this.isFull(); //simple
+        }
+    }
+
+    private boolean isFull() {
+        return this.gameInfo.getNrJoined() == this.gameInfo.getGameSize(); //simple
+    }
+
+    public boolean removePlayer(String playerConnection) throws GameException {
+
+        synchronized (this.playerConnections) {
+            if (this.isFull()) {
+                throw new GameException("game already full");
+            }
+            Integer playerID = this.playerConnections.remove(playerConnection);
+            if (playerID != null) {
+                this.gameInfo.removePlayer(playerID);
+            }
+            return this.isEmpty(); //simple
+        }
+    }
+
+    private boolean isEmpty() {
+        return this.gameInfo.getNrJoined() == 0; //simple
+    }
+
+    public Set<String> getConnections() {
+        synchronized (this.playerConnections) {
+            return new HashSet(this.playerConnections.keySet()); //copy
+        }
+    }
+
+    public long getGameID() {
+        return this.gameInfo.getGameID(); //final
+    }
+
+    public GameInfo getGameInfo() {
+        return new GameInfo(this.gameInfo); //copy
+    }
+
+}

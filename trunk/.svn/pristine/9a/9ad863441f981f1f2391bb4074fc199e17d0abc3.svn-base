@@ -1,0 +1,112 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.server.connectionMW;
+
+import java.io.File;
+import java.io.IOException;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import net.technikumwien.bic4b18_01.common.assist.RUID;
+import net.technikumwien.bic4b18_01.common.assist.TraceHelper;
+import static net.technikumwien.bic4b18_01.common.assist.TraceHelper.getTrunk;
+import net.technikumwien.bic4b18_01.server.spread.AsynchronSpreadMessage;
+import net.technikumwien.bic4b18_01.server.spread.SpreadListener;
+import net.technikumwien.bic4b18_01.server.spread.SynchronSpreadMessage;
+import spread.SpreadConnection;
+import spread.SpreadException;
+import spread.SpreadGroup;
+import spread.SpreadMessage;
+
+/**
+ *
+ * @author Florian
+ */
+public class Spread {
+    
+    private static final Logger logger = Logger.getLogger(TraceHelper.getClassName());
+    private static final RUID serverID =RUID.new_9();
+    public static final SpreadConnection connection = new SpreadConnection();
+    
+    //##########################################################################
+    //server RUID
+    public static RUID getServerID(){
+        return serverID;
+    }
+
+    static void construct() throws SpreadException {
+
+        File trunk = getTrunk();
+        List<String> daemonIPs = new ArrayList();
+
+        daemonIPs.add("127.0.0.1");
+        try {
+            List<String> lines = Files.readAllLines(Paths.get(trunk.getPath() + "\\spread\\src\\main\\java\\net\\technikumwien\\bic4b18_01\\spread\\local\\daemon.ip"));
+            for (String line : lines) {
+                if (!("".equals(line))) {
+                    daemonIPs.add(line);
+                }
+            }
+            // cleansing daemon.ip
+            logger.log(Level.INFO, "daemon.ip successfully read");
+        } catch (IOException ex) {
+            logger.log(Level.SEVERE, "daemon.ip unreadable");
+        }
+
+        logger.log(Level.INFO, "creating serverRUID");
+
+        logger.log(Level.INFO, "joining spread groups with: #{0}", serverID);
+        InetAddress ia = null;
+        for (String ip : daemonIPs) {
+            SpreadGroup group;
+            try {
+                ia = InetAddress.getByName(ip);
+
+                //low priority == client requests
+                connection.connect(ia, 9101, serverID.toString(), false, true);
+                group = new SpreadGroup();
+                group.join(connection, SynchronSpreadMessage.getGroupName());
+                logger.log(Level.INFO, "spread group {0} connected with #{1}", new Object[]{SynchronSpreadMessage.getGroupName(), serverID});
+
+                //high priority == server requests
+                group = new SpreadGroup();
+                group.join(connection, AsynchronSpreadMessage.getGroupName());
+                logger.log(Level.INFO, "spread group {0} connected with #{1}", new Object[]{AsynchronSpreadMessage.getGroupName(), serverID});
+
+                break;
+            } catch (UnknownHostException | SpreadException ex) {
+                //Logger.getLogger(ConnectionMW.class.getName()).log(Level.SEVERE, null, ex);
+            }
+        }
+        if (connection == null) {
+            if (ia == null) {
+                throw new SpreadException("null");
+            }
+            throw new SpreadException(ia.getHostName());
+        }
+
+        //##################################################################
+
+        connection.add(new SpreadListener());
+
+        logger.log(Level.INFO, "creating testMSG");
+
+        SpreadMessage msg = new SpreadMessage();
+        msg.setObject("testMSG");
+        msg.setType((short) 0);
+        logger.log(Level.INFO, "sending testMSG");
+        AsynchronSpreadMessage.deliver(msg);
+    }
+
+    static void destruct() throws SpreadException {
+        connection.disconnect();
+    }
+}

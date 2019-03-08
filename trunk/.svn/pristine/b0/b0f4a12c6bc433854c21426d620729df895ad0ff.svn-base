@@ -1,0 +1,93 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.spread.local;
+
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import static java.nio.file.StandardOpenOption.CREATE;
+import static java.nio.file.StandardOpenOption.TRUNCATE_EXISTING;
+import static java.nio.file.StandardOpenOption.WRITE;
+import java.util.List;
+import java.util.Set;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import static net.technikumwien.bic4b18_01.common.assist.LocalNetwork.getMyIPs;
+import static net.technikumwien.bic4b18_01.common.assist.TraceHelper.getTrunk;
+import net.technikumwien.bic4b18_01.spread.shared.Daemon;
+
+/**
+ *
+ * @author Florian
+ */
+public class DaemonApplication {
+
+    private static final Logger logger = Logger.getLogger(DaemonApplication.class.getName());
+
+    /**
+     * @param args the command line arguments
+     */
+    public static void main(String[] args) {
+        try {
+            File trunk = getTrunk();
+            Set<String> myIPs = getMyIPs();
+            Set<String> daemonIPs = Daemon.ips(); // where you can contact a deamon
+            String daemonName = null; // any one of the local daemon
+            List<String> lines;
+            String content = "";
+
+            //getting my spread-name from spread.conf
+            lines = Files.readAllLines(Paths.get(trunk.getPath() + "\\spread\\src\\main\\java\\net\\technikumwien\\bic4b18_01\\spread\\local\\spread.conf"));
+            for (String line : lines) {
+                if (!line.contains("\t")) {
+                    continue;
+                }
+                String ip = line.substring(12);
+                if (myIPs.contains(ip)) {
+                    daemonIPs.add(ip);
+                    if (daemonName == null) {
+                        daemonName = line.substring(1, 10);
+                    }
+                }
+            }
+            if (daemonName == null) {
+                logger.log(Level.SEVERE, "could not asign daemon to any IP");
+                return;
+            }
+
+            // appending to daemon.ip
+            content = daemonIPs.stream().map((ip) -> ip + "\n").reduce(content, String::concat);
+            Path path = Paths.get(trunk.getPath() + "\\spread\\src\\main\\java\\net\\technikumwien\\bic4b18_01\\spread\\local\\daemon.ip");
+            byte[] strToBytes = content.getBytes();
+            Files.write(path, strToBytes, CREATE, TRUNCATE_EXISTING, WRITE);
+            logger.log(Level.INFO, "spread.config successfully created");
+
+            // generating content of spread.bat
+            content = "CD /D %~dp0\n"
+                    + "start ..\\..\\..\\..\\..\\..\\..\\..\\spread-binary\\spread-bin-4.0.0\\bin\\win32\\spread.exe -n "
+                    + daemonName
+                    + " -c spread.conf\n"
+                    + "exit\n";
+            // creating spread.bat
+            path = Paths.get(trunk.getPath() + "\\spread\\src\\main\\java\\net\\technikumwien\\bic4b18_01\\spread\\local\\spread.bat");
+            strToBytes = content.getBytes();
+            Files.write(path, strToBytes, CREATE, TRUNCATE_EXISTING, WRITE);
+            logger.log(Level.INFO, "spread.bat successfully created");
+
+            //starting spread daemon
+            try {
+                Runtime.getRuntime().exec("cmd /c start " + trunk.getPath() + "\\spread\\src\\main\\java\\net\\technikumwien\\bic4b18_01\\spread\\local\\spread.bat");
+            } catch (IOException ex) {
+                logger.log(Level.SEVERE, null, ex);
+            }
+        } catch (IOException ex) {
+            Logger.getLogger(DaemonApplication.class.getName()).log(Level.SEVERE, null, ex);
+        }
+    }
+
+}

@@ -1,0 +1,35 @@
+package net.technikumwien.bic4b18_01.common.rmi;
+
+import net.technikumwien.bic4b18_01.common.exception.ConnectionException;
+import net.technikumwien.bic4b18_01.common.exception.GameException;
+import java.rmi.Remote;
+import java.rmi.RemoteException;
+import java.util.ArrayDeque;
+import java.util.Set;
+import java.util.UUID;
+
+public interface RMI_Client2Server extends Remote {
+
+    //local read
+    public Set<GameInfo> getGames(int port)
+            throws RemoteException, ConnectionException;
+
+    //global write
+    public String registerClient(UUID cUID, int port)
+            throws RemoteException, ConnectionException;//throws exception: port taken
+
+    public GameInfo hostGame(int port, int requestNr, int players, String playerName)
+            throws RemoteException, ConnectionException, GameException;//throws exception: to few/many players
+
+    public GameInfo joinGame(int port, int requestNr, int gameID, String playerName)
+            throws RemoteException, ConnectionException, GameException;//throws exception: already full, no such game, player name already used
+
+    public void leaveGame(int port, int requestNr)
+            throws RemoteException, ConnectionException, GameException;//throws exception: already full, no such game
+
+    public void endGame(int port, int requestNr, ArrayDeque<MoveInfo> lastMoves)
+            throws RemoteException, ConnectionException, GameException;
+
+    public void unregisterClient(int port, int requestNr)
+            throws RemoteException, ConnectionException, GameException;
+}

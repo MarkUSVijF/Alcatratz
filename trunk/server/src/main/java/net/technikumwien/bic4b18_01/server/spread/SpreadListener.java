@@ -1,0 +1,204 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.server.spread;
+
+import java.util.ArrayDeque;
+import net.technikumwien.bic4b18_01.server.applicationMW.Spread;
+import java.util.Arrays;
+import java.util.Deque;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import net.technikumwien.bic4b18_01.common.assist.TraceHelper;
+import net.technikumwien.bic4b18_01.server.applicationMW.Middleware;
+import net.technikumwien.bic4b18_01.server.common.Game;
+import net.technikumwien.bic4b18_01.server.common.GameList;
+import net.technikumwien.bic4b18_01.server.common.Response;
+import net.technikumwien.bic4b18_01.server.rmi.CallBackManager;
+import net.technikumwien.bic4b18_01.server.rmi.ClientRequests;
+import spread.AdvancedMessageListener;
+import spread.SpreadException;
+import spread.SpreadGroup;
+import spread.SpreadMessage;
+
+/**
+ *
+ * @author Florian can listen to multiple groups!!!
+ */
+public class SpreadListener implements AdvancedMessageListener {
+
+    private static final Logger logger = Logger.getLogger(TraceHelper.getClassName());
+    public static final Thread regularWorker; //synch, asynch, private,
+    private static final Deque<SpreadMessage> regularMessages;
+    private static SpreadMessage updateMsgForMe = null;
+
+    static {
+        regularMessages = new ArrayDeque();
+        regularWorker = new Thread(() -> {
+            while (true) {
+                while (true) {
+                    SpreadMessage sm;
+                    Middleware.serverStateLock.readLock().lock();
+                    try {
+                        synchronized (regularMessages) {
+                            if (regularMessages.isEmpty()) {
+                                break;
+                            }
+                            sm = regularMessages.poll();
+                        }
+                    } finally {
+                        Middleware.serverStateLock.readLock().unlock();
+                    }
+                    try {
+                        for (SpreadGroup sg : Arrays.asList(sm.getGroups())) {
+                            if (sg.toString().equals(SynchronSpreadMessage.getGroupName())) {
+                                logger.log(Level.INFO, "{0} -> got a SynchronSpreadMessage.", Thread.currentThread().getName());
+                                SynchronSpreadMessage.process(sm);
+                            }
+                            if (sg.toString().equals(AsynchronSpreadMessage.getGroupName())) {
+                                logger.log(Level.INFO, "{0} -> got a AsynchronSpreadMessage.", Thread.currentThread().getName());
+                                AsynchronSpreadMessage.process(sm);
+                            }
+                            if (sg.toString().contains(Spread.getServerID().toString())) {
+                                logger.log(Level.INFO, "{0} -> got a PrivatSpreadMessage.", Thread.currentThread().getName());
+                                PrivatSpreadMessage.process(sm);
+                            }
+                        }
+                    } catch (SpreadException ex) {
+                        logger.log(Level.SEVERE, "{0} -> SpreadException", Thread.currentThread().getName());
+                    }
+                }
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException ex) {
+                }
+            }
+        });
+        regularWorker.setDaemon(true);
+        regularWorker.setName("SPREAD  Connection   - " + Spread.getServerID());
+
+    }
+
+    @Override
+    public void membershipMessageReceived(SpreadMessage sm) {
+        logger.log(Level.INFO, "{0} -> received membershipMSG {1}.", new Object[]{Thread.currentThread().getName(), sm.getMembershipInfo().getGroup().toString()});
+        MembershipMessage.add(sm);
+    }
+
+    @Override
+    public void regularMessageReceived(SpreadMessage sm) {
+        synchronized (regularMessages) {
+            for (SpreadGroup sg : Arrays.asList(sm.getGroups())) {
+                synchronized (Middleware.state) {
+                    if (Middleware.state.toInt() < 4 && (isMyGetUpdateRequest(sm, sg) || isUpdateForMe(sm, sg))) {
+                        updateIncomming(sm, sg);
+                        return;
+                    }
+                }
+            }
+            Middleware.serverStateLock.readLock().lock();
+            try {
+                regularMessages.add(sm);
+                logger.log(Level.INFO, "{0} -> regularMessages to work:{1}", new Object[]{Thread.currentThread().getName(), regularMessages.size()});
+                if (regularWorker.isAlive()) {
+                    regularWorker.interrupt();
+                }
+            } finally {
+                Middleware.serverStateLock.readLock().unlock();
+            }
+        }
+    }
+
+    private static void updateIncomming(SpreadMessage sm, SpreadGroup sg) {
+
+        logger.log(Level.INFO, "{0} -> updateIncomming", new Object[]{Thread.currentThread().getName()});
+        Middleware.serverStateLock.writeLock().lock();
+        try {
+            if (isMyGetUpdateRequest(sm, sg)) {
+                //getServerSate - my Request to all
+                //state either [0->1] or [2->3]
+                synchronized (Middleware.state) {
+                    //max once!!!!
+                    Middleware.state.up();
+                    //reset regularMessages
+                    regularMessages.clear();
+                    if (Middleware.state.toInt() == 3) {
+                        initiateUpdate();
+                    }
+                }
+            }
+            if (isUpdateForMe(sm, sg)) {
+                //setServerSate - Responses to me
+                //state either [0->2] or [1->3]
+                synchronized (Middleware.state) {
+                    //up to n times ( every server )
+                    if (Middleware.state.toInt() > 1) {
+                        return; //ignore this message
+                    }
+                    Middleware.state.up();
+                    Middleware.state.up();
+                    //add all from update
+                    updateMsgForMe = sm;
+                    if (Middleware.state.toInt() == 3) {
+                        initiateUpdate();
+                    }
+                }
+            }
+        } finally {
+            Middleware.serverStateLock.writeLock().unlock();
+        }
+    }
+
+    private static boolean isMyGetUpdateRequest(SpreadMessage sm, SpreadGroup sg) {
+        return sm.getType() == Short.MAX_VALUE
+                && sm.getSender().toString().contains(Spread.getServerID().toString())
+                && sg.toString().equals(SynchronSpreadMessage.getGroupName());
+    }
+
+    private static boolean isUpdateForMe(SpreadMessage sm, SpreadGroup sg) {
+        return sm.getType() == Short.MAX_VALUE
+                && sg.toString().contains(Spread.getServerID().toString());
+    }
+
+    private static void initiateUpdate() {
+        logger.log(Level.INFO, "{0} -> initiateUpdate", new Object[]{Thread.currentThread().getName()});
+        Thread update = new Thread(() -> {
+            Middleware.serverStateLock.writeLock().lock();
+            try {
+                try {
+                    List digest = updateMsgForMe.getDigest();
+
+                    Map<String, Response> client_responsesUpdate = (Map<String, Response>) digest.get(0);
+                    ClientRequests.update(client_responsesUpdate);
+
+                    Map<String, Set<String>> serverHandlesUpdate = (Map<String, Set<String>>) digest.get(1);
+                    Map<String, Set<Integer>> jobsUpdate = (Map<String, Set<Integer>>) digest.get(2);
+                    Map<Integer, CallBackManager.Action> actionsUpdate = (Map<Integer, CallBackManager.Action>) digest.get(3);
+                    CallBackManager.update(serverHandlesUpdate, jobsUpdate, actionsUpdate);
+
+                    Map<Integer, Game> openGamesUpdate = (Map<Integer, Game>) digest.get(4);
+                    Map<Integer, Game> activeGamesUpdate = (Map<Integer, Game>) digest.get(5);
+                    Map<Integer, Game> closingGamesUpdate = (Map<Integer, Game>) digest.get(6);
+                    Map<String, Integer> userID_gameIDUpdate = (Map<String, Integer>) digest.get(7);
+                    GameList.update(openGamesUpdate, activeGamesUpdate, closingGamesUpdate, userID_gameIDUpdate);
+                } catch (SpreadException ex) {
+                    //should never be thrown
+                    Logger.getLogger(SpreadListener.class.getName()).log(Level.SEVERE, null, ex);
+                }
+                Middleware.state.setInt(4);
+                regularWorker.start();
+                logger.log(Level.INFO, "{0} -> updated", new Object[]{Thread.currentThread().getName()});
+            } finally {
+                Middleware.serverStateLock.writeLock().unlock();
+            }
+        });
+        update.setDaemon(true);
+        update.setName("update");
+        update.start();
+    }
+}

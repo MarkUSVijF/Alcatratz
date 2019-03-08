@@ -1,0 +1,51 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.common.assist;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
+/**
+ *
+ * @author Florian
+ */
+public class LocalNetwork {
+
+    public static Set<String> getMyIPs() {
+
+        final Set<String> result = new HashSet();
+        InputStream ipconfig = null;
+        try {
+            ipconfig = Runtime.getRuntime().exec("ipconfig").getInputStream();
+            int ch;
+            String cmd_OUT = "";
+            while ((ch = ipconfig.read()) != -1) {
+                cmd_OUT += ((char) ch);
+            }
+            for (String line : cmd_OUT.split("\n")) {
+                if (line.contains("IPv4")) {
+                    result.add(line.substring(line.lastIndexOf(':') + 2, line.lastIndexOf('\r')));
+                }
+            }
+            return result;
+        } catch (IOException ex) {
+            Logger.getLogger(LocalNetwork.class.getName()).log(Level.SEVERE, null, ex);
+        } finally {
+            try {
+                if (ipconfig != null) {
+                    ipconfig.close();
+                }
+            } catch (IOException ex) {
+                Logger.getLogger(LocalNetwork.class.getName()).log(Level.SEVERE, null, ex);
+            }
+        }
+        return new HashSet();
+    }
+}

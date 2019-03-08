@@ -1,0 +1,127 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.server.connectionMW;
+
+import java.io.File;
+import java.io.IOException;
+import java.io.InterruptedIOException;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import net.technikumwien.bic4b18_01.common.assist.RUID;
+import net.technikumwien.bic4b18_01.common.assist.TODO;
+import net.technikumwien.bic4b18_01.common.assist.TraceHelper;
+import static net.technikumwien.bic4b18_01.common.assist.TraceHelper.getTrunk;
+import net.technikumwien.bic4b18_01.common.rmi.GameInfo;
+import net.technikumwien.bic4b18_01.common.rmi.MoveInfo;
+import net.technikumwien.bic4b18_01.server.common.Data;
+import net.technikumwien.bic4b18_01.server.common.Game;
+import net.technikumwien.bic4b18_01.server.spread.AsynchronSpreadMessage;
+import net.technikumwien.bic4b18_01.server.spread.SpreadListener;
+import net.technikumwien.bic4b18_01.server.spread.SynchronSpreadMessage;
+import spread.MessageFactory;
+import spread.SpreadConnection;
+import spread.SpreadException;
+import spread.SpreadGroup;
+import spread.SpreadMessage;
+
+/**
+ * package access only
+ *
+ * @author Florian
+ */
+public class ToSpreadGroup {
+
+    public static SpreadConnection connection = null;
+    private static final Logger logger = Logger.getLogger(TraceHelper.getClassName());
+
+    //##########################################################################
+
+    //##########################################################################
+
+    //##########################################################################
+    static void construct() throws SpreadException {
+
+        File trunk = getTrunk();
+        List<String> daemonIPs = new ArrayList();
+
+        daemonIPs.add("127.0.0.1");
+        try {
+            List<String> lines = Files.readAllLines(Paths.get(trunk.getPath() + "\\spread\\src\\main\\java\\net\\technikumwien\\bic4b18_01\\spread\\local\\daemon.ip"));
+            for (String line : lines) {
+                if (!("".equals(line))) {
+                    daemonIPs.add(line);
+                }
+            }
+            // cleansing daemon.ip
+            logger.log(Level.INFO, "daemon.ip successfully read");
+        } catch (IOException ex) {
+            Logger.getLogger(ConnectionOUT.class.getName()).log(Level.SEVERE, "daemon.ip unreadable");
+        }
+
+        logger.log(Level.INFO, "creating serverRUID");
+
+        logger.log(Level.INFO, "joining spread groups with: #{0}", Data.getServerID());
+        InetAddress ia = null;
+        for (String ip : daemonIPs) {
+            SpreadGroup group;
+            try {
+                ia = InetAddress.getByName(ip);
+
+                //low priority == client requests
+                connection = new SpreadConnection();
+                connection.connect(ia, 9101, Data.getServerID().toString(), false, true);
+                group = new SpreadGroup();
+                group.join(connection, SynchronSpreadMessage.getGroupName());
+                logger.log(Level.INFO, "spread group {0} connected with #{1}", new Object[]{SynchronSpreadMessage.getGroupName(), Data.getServerID()});
+
+                //high priority == server requests
+                group = new SpreadGroup();
+                group.join(connection, AsynchronSpreadMessage.getGroupName());
+                logger.log(Level.INFO, "spread group {0} connected with #{1}", new Object[]{AsynchronSpreadMessage.getGroupName(), Data.getServerID()});
+
+                break;
+            } catch (UnknownHostException | SpreadException ex) {
+                //Logger.getLogger(ConnectionMW.class.getName()).log(Level.SEVERE, null, ex);
+            }
+        }
+        if (connection == null) {
+            if (ia == null) {
+                throw new SpreadException("null");
+            }
+            throw new SpreadException(ia.getHostName());
+        }
+
+        //##################################################################
+        TODO.todo(ConnectionOUT.class.getName(), "finish spread implementation");
+
+        connection.add(new SpreadListener());
+
+        logger.log(Level.INFO, "creating testMSG");
+
+        SpreadMessage msg = new SpreadMessage();
+        msg.setObject("testMSG");
+        msg.setType((short) 0);
+        logger.log(Level.INFO, "sending testMSG");
+        AsynchronSpreadMessage.deliver(msg);
+    }
+
+    static void destruct() throws SpreadException {
+        if (connection != null) {
+            connection.disconnect();// pretty dirty
+            connection = null;
+        }
+    }
+}

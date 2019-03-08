@@ -1,0 +1,6 @@
+# 127.0.0.1 // do not use when using more than one pc!!!!
+# your local IPs will be added automatically per ipconfig lookup
+# spread should be able to work with this
+192.168.56.1
+192.168.56.101
+192.168.56.102

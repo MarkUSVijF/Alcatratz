@@ -1,0 +1,189 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.server.common;
+
+import java.io.Serializable;
+import java.util.ArrayDeque;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Queue;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock.ReadLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock.WriteLock;
+import net.technikumwien.bic4b18_01.common.rmi.GameInfo;
+import spread.SpreadMessage;
+
+/**
+ *
+ * @author Florian
+ */
+public class ServerData implements Serializable {
+
+    private final HashMap<Integer, Game> openGames; // gameID -> gameInstance
+    private final HashMap<Integer, Game> fullGames; // gameID -> gameInstance
+    private final HashMap<String, Integer> user_game; // connection [IP:PORT] -> gameID
+    private final HashMap<String, Response> user_lastREQ; // connection [IP:PORT] -> requestInstance
+    private final transient ArrayDeque<SpreadMessage> msgs; //? needed ?
+    private transient int activeREQ;
+    private transient boolean needsUpdate;
+    private final transient ReentrantReadWriteLock lock;
+
+    private ServerData() {
+        this.openGames = new HashMap();
+        this.fullGames = new HashMap();
+        this.user_game = new HashMap();
+        this.user_lastREQ = new HashMap();
+        //transient
+        this.msgs = new ArrayDeque();
+        this.activeREQ = 0;
+        this.needsUpdate = true;
+        this.lock = new ReentrantReadWriteLock();
+    }
+
+    public static ServerData getInstance() {
+        return InstanceHolder.INSTANCE;
+    }
+
+    private static class InstanceHolder {
+
+        private static ServerData INSTANCE = new ServerData();
+    }
+
+    public ReadLock read() {
+        return this.lock.readLock();
+    }
+
+    public WriteLock write() {
+        return this.lock.writeLock();
+    }
+
+    //##########################################################################
+    public static class SPREAD {
+
+        public static class HighPriority {
+
+            public static SPREAD.HighPriority getInstance() {
+                return InstanceHolder.INSTANCE;
+            }
+
+            private static class InstanceHolder {
+
+                private static HighPriority INSTANCE = new HighPriority();
+            }
+
+            public Serializable getUpdate() {
+                return ServerData.getInstance();
+            }
+
+            public void updateData(Serializable object) {
+                Queue<SpreadMessage> msgs = ServerData.getInstance().msgs;
+                int activeREQ = ServerData.getInstance().activeREQ;
+                boolean needsUpdate = ServerData.getInstance().needsUpdate;
+                ServerData.InstanceHolder.INSTANCE = (ServerData) object;
+                throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+            }
+        }
+
+        public static class LowPriority {
+
+            private final ServerData data = ServerData.getInstance();
+
+            public static SPREAD.LowPriority getInstance() {
+                return InstanceHolder.INSTANCE;
+            }
+
+            private static class InstanceHolder {
+
+                private static LowPriority INSTANCE = new LowPriority();
+            }
+
+            public boolean addClient(String client) {
+                Response req = new Response(0, null, "void", "addClient");
+                data.write().lock();
+                try {
+                    if (data.user_lastREQ.containsKey(client)) {
+
+                        return false;
+                    }
+                    data.user_lastREQ.put(client, req);
+                    return true;
+                } finally {
+                    data.write().unlock();
+                }
+            }
+        }
+    }
+
+    //##########################################################################
+    public static class RMI {
+
+        private final ServerData data = ServerData.getInstance();
+        public final int MINPORT = 1100;
+        public final int MAXPORT = 9100;
+
+        public static RMI getInstance() {
+            return InstanceHolder.INSTANCE;
+        }
+
+        private static class InstanceHolder {
+
+            private static RMI INSTANCE = new RMI();
+        }
+
+        //######################################################################
+        public boolean addClient(String connection) {
+            Response req = new Response(0, null, "void", "addClient");
+            synchronized (data) {
+
+                if (hasClient(connection)) {
+                    return false;
+                }
+                data.user_lastREQ.put(connection, req);
+                return true;
+            }
+        }
+
+        public boolean hasClient(String connection) {
+            return data.user_lastREQ.containsKey(connection);
+        }
+
+        public GameInfo joinGame(String client, int reqID) {
+            GameInfo result = null;
+            synchronized (data) {
+                Response lastREQ = data.user_lastREQ.get(client);
+                if (lastREQ != null && lastREQ.reqID == reqID && "GameInfo".equals(lastREQ.type)) {
+                    return (GameInfo) lastREQ.value;
+                }
+
+                Response newREQ = new Response(0, result, "GameInfo", "joinGame");
+            }
+            return result;
+        }
+
+        //######################################################################
+        public HashSet<GameInfo> getOpenGames(String client, int reqID) {
+            HashSet<GameInfo> result = new HashSet();
+            synchronized (data) {
+                /**
+                 * lokal read -> no synch & newest info
+                 * RequestInfo lastREQ = data.user_lastREQ.get(client);
+                 * if(lastREQ!=null && lastREQ.reqID==reqID &&
+                 * "HashSet<GameInfo>".equals(lastREQ.responseType)){
+                 * return (HashSet<GameInfo>) lastREQ.response;
+                 * }
+                 */
+                data.openGames.values().forEach((game) -> {
+                    result.add(game.getGameInfo());// copy
+                });
+                Response newREQ = new Response(reqID, result, "HashSet<GameInfo>", "getOpenGames");
+                data.user_lastREQ.put(client, newREQ);
+            }
+            return result;
+        }
+
+        //######################################################################
+    }
+}

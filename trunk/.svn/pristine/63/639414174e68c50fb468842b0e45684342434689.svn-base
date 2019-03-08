@@ -1,0 +1,212 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.client.connectionMW;
+
+import java.net.MalformedURLException;
+import java.rmi.Naming;
+import java.rmi.NotBoundException;
+import java.rmi.RemoteException;
+import java.rmi.server.UnicastRemoteObject;
+import java.util.ArrayDeque;
+import java.util.HashSet;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import net.technikumwien.bic4b18_01.client.rmi.Client2Client;
+import net.technikumwien.bic4b18_01.common.assist.TraceHelper;
+import net.technikumwien.bic4b18_01.common.rmi.MoveInfo;
+import net.technikumwien.bic4b18_01.common.rmi.RMI_Client2Client;
+import static net.technikumwien.bic4b18_01.common.rmi.RMI_Services.client2client;
+
+/**
+ * package access only
+ *
+ * @author Florian
+ */
+class ToClient implements IClient2ClientMW {
+
+    /**
+     *
+     */
+    private static final Data data = Data.getLink();
+    private static final Heart heart = Heart.getInstance();
+    private static final Logger logger = Logger.getLogger(TraceHelper.getClassName());
+
+    private ToClient() {
+    }
+
+    public static ToClient getInstance() {
+        return InstanceHolder.INSTANCE;
+    }
+
+    private static class InstanceHolder {
+
+        private static final ToClient INSTANCE = new ToClient();
+    }
+
+    static void construct(String connection) throws RemoteException, MalformedURLException {
+
+        // ### ToClient.Data.createInstance(); at game start
+        //bind RMI
+        String ip = connection.substring(0, connection.indexOf(':'));
+        int port = Integer.valueOf(connection.substring(connection.indexOf(':') + 1));
+        System.setProperty("java.rmi.server.hostname", ip);
+        RMI_Client2Client client2clientSkeleton = new Client2Client();
+        UnicastRemoteObject.exportObject(client2clientSkeleton, port);
+        Naming.rebind("rmi://" + connection + "/" + client2client.toString(), client2clientSkeleton);
+        System.clearProperty("java.rmi.server.hostname");
+        logger.log(Level.INFO, "{0} bound to {1}", new Object[]{client2client, "" + port});
+
+    }
+
+    static void destruct(String connection) {
+
+        String ip = connection.substring(0, connection.indexOf(':'));
+        int port = Integer.valueOf(connection.substring(connection.indexOf(':') + 1));
+        try {
+            Naming.unbind("rmi://" + connection + "/" + client2client.toString());
+        } catch (RemoteException | NotBoundException | MalformedURLException ex) {
+            logger.log(Level.WARNING, "could not unbind rmi service " + client2client.toString(), ex);
+        }
+        Data.destroyInstance();
+    }
+
+    //######################################################################
+    //player driven functionalities
+    @Override
+    public void sendMove(MoveInfo move) throws RemoteException {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    //######################################################################
+    // automatic functionalities
+    public void startHeart() throws RemoteException {
+        Thread worker = new Thread(heart);
+        worker.start();
+    }
+
+    public void stopHeart() throws RemoteException {
+        heart.stop(); // will end worker thread
+    }
+
+    public ArrayDeque<MoveInfo> getUpdate(int lastKnownMoveID) { //FIFO
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    //######################################################################
+    /**
+     * used for client 2 client connections inside a game
+     */
+    private static class Data { //singleton
+
+        private HashSet<RMI_Client2Client> stubSet;
+        private int localMoveID;
+        private ArrayDeque<MoveInfo> lastMoves; //size dependend!!!
+
+        private Data() {
+            stubSet = new HashSet();
+            localMoveID = 0;
+            lastMoves = new ArrayDeque();
+        }
+
+        //##################################################################
+        public static Data getLink() {
+            return InstanceHolder.INSTANCE;
+        }
+
+        public static void createInstance() {
+            if (InstanceHolder.INSTANCE == null) {
+                InstanceHolder.INSTANCE = new Data();
+            }
+        }
+
+        public static void destroyInstance() {
+            InstanceHolder.INSTANCE = null;
+        }
+
+        private static class InstanceHolder {
+
+            private static Data INSTANCE = null;
+        }
+
+        //##################################################################
+        public void setStubs(HashSet<String> playerConnections) {
+            throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+        }
+
+        public HashSet<RMI_Client2Client> getStubs() {
+            throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+        }
+
+        public void setMoveID() {
+            throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+        }
+
+        public int getMoveID() {
+            throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+        }
+    }
+
+    private static class Heart implements Runnable {
+
+        private boolean active;
+        //private final Lock r = activeLock.readLock();
+        //private final Lock w = activeLock.writeLock();
+
+        private Heart() {
+            this.active = false;
+        }
+
+        //##################################################################
+        public static Heart getInstance() {
+            return InstanceHolder.INSTANCE;
+        }
+
+        private static class InstanceHolder {
+
+            private static final Heart INSTANCE = new Heart();
+        }
+
+        //##################################################################
+        @Override
+        public void run() {
+            synchronized (this) {
+                if (this.active) {
+                    return;
+                }
+                this.active = true;
+            }
+            while (true) {
+                try {
+                    Thread.sleep(60000);// timeout 1min
+                } catch (InterruptedException ex) {
+                    logger.log(Level.ALL, "heartbeat wake up [HOW?]", ex);
+                }
+                synchronized (this) {
+                    if (!this.active) {
+                        break;
+                    }
+                }
+                ToClient.data.getStubs().forEach((client) -> {
+                    try {
+                        client.setHeartbeat(ToClient.data.getMoveID());
+                    } catch (RemoteException ex) {
+                        logger.log(Level.SEVERE, "other client is not responding", ex);
+                    }
+                });
+            }
+        }
+
+        public void stop() {
+            synchronized (this) {
+                if (!this.active) {
+                    return;
+                }
+                this.active = false;
+            }
+        }
+
+    }
+}

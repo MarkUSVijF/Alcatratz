@@ -1,0 +1,38 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.server.connectionMW;
+
+import java.util.ArrayDeque;
+import java.util.UUID;
+import net.technikumwien.bic4b18_01.common.rmi.MoveInfo;
+
+/**
+ *
+ * @author Florian
+ */
+public interface IServer2ServerMW {
+ 
+    public void sendMessage_registerClient(long threadID, String clientConnection, int cUID);
+    
+    public void sendMessage_hostGame(long threadID, String clientConnection, int reqNR, int players, String playerName); ;
+
+    public void sendMessage_joinGame(long threadID, String clientConnection, int reqNR, long gameID, String playerName);
+
+    public void sendMessage_leaveGame(long threadID, String clientConnection, int reqNR);
+
+    public void sendMessage_endGame(long threadID, String clientConnection, int reqNR, ArrayDeque<MoveInfo> lastMoves);
+
+    public void sendMessage_unregisterClient(long threadID, String clientConnection, int reqNR);
+
+
+    
+    
+    
+    
+    
+    
+    
+}

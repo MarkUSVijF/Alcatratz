@@ -1,0 +1,79 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package net.technikumwien.bic4b18_01.common.rmi;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import static net.technikumwien.bic4b18_01.common.assist.LocalNetwork.getMyIPs;
+import net.technikumwien.bic4b18_01.common.assist.TODO;
+import static net.technikumwien.bic4b18_01.common.assist.TraceHelper.getTrunk;
+
+/**
+ *
+ * @author Florian
+ */
+public class Server {
+
+    private static final int MINPORT = 1100;
+    private static final int MAXPORT = 9100;
+    private static final Map<String, Set<String>> serverNetwork;
+    private static final Set<String> serverAdresses;
+
+    static {
+        serverNetwork = new HashMap();
+        serverAdresses = new HashSet();
+        Set<String> lineSet;
+        try {
+            lineSet = new HashSet(Files.readAllLines(Paths.get(getTrunk().getPath() + "\\common\\src\\main\\java\\net\\technikumwien\\bic4b18_01\\common\\settings\\server.ip")));
+
+        } catch (IOException ex) {
+            Logger.getLogger(Server.class.getName()).log(Level.SEVERE, "server.ip could not be read!", ex);
+
+            lineSet = new HashSet();
+        }
+        //serverAddresses
+        lineSet.stream().filter((s) -> (!s.startsWith("#"))).forEachOrdered((s) -> {
+            serverAdresses.add(s);
+        });
+        serverAdresses.remove("");
+
+        // spread addresses
+        serverAdresses.forEach((serverIP) -> {
+            String subNet = String.valueOf(serverIP.subSequence(0, serverIP.lastIndexOf('.'))) + ".255:" + (MAXPORT + 1);
+            Set<String> subNetIPs = serverNetwork.get(subNet);
+            if (subNetIPs == null) {
+                subNetIPs = new HashSet();
+            }
+            subNetIPs.add(serverIP);
+            serverNetwork.put(subNet, subNetIPs);
+        });
+    }
+
+    public static Set<String> ip() {
+        return Server.serverAdresses;
+    }
+
+    public static Map<String, Set<String>> network() {
+        return Server.serverNetwork;
+    }
+
+    public static int minPort() {
+        return MINPORT;
+    }
+
+    public static int maxPort() {
+        return MAXPORT;
+    }
+}
